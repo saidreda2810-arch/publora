@@ -1,0 +1,1057 @@
+For your project, I would build **SAA (Smart Automated Assistant)** as a complete, multi-user SaaS platform for automated video management, AI-powered content preparation, social media publishing, and performance analysis.
+
+The goal is bigger than a simple video scheduler.
+
+I envision it as an **all-in-one Social Media Automation & Intelligence Platform** where any person or business can:
+
+1. Create an account.
+2. Connect their social media accounts.
+3. Upload videos or connect Google Drive.
+4. Let AI analyze their content.
+5. Automatically prepare platform-specific content.
+6. Schedule or automatically publish videos.
+7. Track performance across platforms.
+8. Understand what works and what doesn't.
+9. Improve their publishing strategy using actual performance data.
+
+And importantly, this must be a real SaaS product, not a personal dashboard built around your own channels.
+
+Every registered user gets an independent workspace, private data, their own connected accounts, schedules, videos, analytics, and settings.
+
+# 1. The complete SaaS feature architecture
+
+I recommend organizing the platform into 15 major modules.
+
+## MODULE 01 — User Accounts & Authentication
+
+A complete account system for ordinary customers.
+
+### Features
+- Sign up with email and password.
+- Sign in and sign out.
+- Google Sign-In.
+- Email verification.
+- Forgot password.
+- Password reset.
+- Two-factor authentication (2FA).
+- Session management.
+- Remember me.
+- Login history.
+- Active device management.
+- Account deletion.
+- Account export.
+- Profile editing.
+- Language preferences.
+- Time zone preferences.
+- Dark/light mode.
+
+### User workspace
+
+Every user must have an independent workspace containing:
+
+- Their videos.
+- Their connected social accounts.
+- Their publishing schedules.
+- Their AI-generated content.
+- Their analytics.
+- Their automation rules.
+- Their notifications.
+- Their personal settings.
+
+**Critical:** One user must never be able to access another user's private data.
+
+---
+
+## MODULE 02 — Social Media Account Manager
+
+This is one of the most important modules.
+
+Users should be able to connect their social media accounts through official OAuth authentication.
+
+### Supported platforms
+
+| Platform | Connection | Publishing |
+|---|---|---|
+| YouTube | OAuth | Videos and Shorts |
+| Facebook | Meta OAuth | Reels and supported video posts |
+| Instagram | Meta OAuth | Reels and supported video posts |
+| TikTok | TikTok OAuth | Supported video posts |
+
+### Features
+- Connect accounts.
+- Disconnect accounts.
+- Reconnect expired accounts.
+- Refresh access tokens securely.
+- Display account information.
+- Display profile picture.
+- Display platform name.
+- Show connection status.
+- Show permission status.
+- Detect expired authorization.
+- Show publishing restrictions.
+- Manage multiple accounts where API permissions allow.
+- Test account connection.
+
+### Account dashboard
+
+Each connected account should display:
+
+- Account name.
+- Platform.
+- Connection status.
+- Last successful publication.
+- Total published videos.
+- Upcoming scheduled videos.
+- Recent publishing errors.
+
+Never ask users to enter their social media passwords directly into your application. Use official authorization flows.
+
+---
+
+## MODULE 03 — Video Library & File Management
+
+A centralized video management system.
+
+### Upload methods
+- Manual video upload.
+- Multiple video uploads.
+- Drag-and-drop uploads.
+- Google Drive integration.
+- Google Drive folder monitoring.
+- Local folder monitoring through an optional desktop companion application.
+- Import from supported external storage providers.
+
+### Video library features
+- Video thumbnails.
+- Video preview.
+- Video duration.
+- Resolution.
+- File format.
+- File size.
+- Upload date.
+- Video status.
+- Search.
+- Filters.
+- Tags.
+- Categories.
+- Folders.
+- Favorites.
+- Bulk selection.
+- Bulk deletion.
+- Duplicate detection.
+- Video metadata extraction.
+
+### Video statuses
+
+- Uploaded.
+- Processing.
+- Analyzing.
+- Ready.
+- Scheduled.
+- Publishing.
+- Published.
+- Failed.
+- Needs attention.
+- Archived.
+
+### Video organization
+
+Users should be able to create their own folders and projects.
+
+For example:
+
+- Campaign 01.
+- Educational Videos.
+- Product Videos.
+- Weekly Content.
+- Behind the Scenes.
+
+These are user-created examples, not predefined projects.
+
+---
+
+## MODULE 04 — AI Video Intelligence
+
+This should be one of the platform's strongest features.
+
+The AI must analyze the actual video rather than generating generic descriptions based on its filename.
+
+### Video analysis
+
+Analyze:
+
+1. Video content.
+2. Main subjects.
+3. Objects and activities.
+4. Scenes.
+5. Visual style.
+6. Camera movement.
+7. Speech and dialogue.
+8. Audio.
+9. Music where identifiable.
+10. Language.
+11. Video duration.
+12. Opening hook.
+13. Story structure.
+14. Important moments.
+15. Potential audience.
+16. Content category.
+17. Suitable social platforms.
+
+### AI-generated results
+
+For each video, generate:
+
+- Video summary.
+- Suggested title.
+- Short description.
+- Long description.
+- Captions.
+- Hashtags.
+- Keywords.
+- Opening hook.
+- Call to action.
+- Thumbnail suggestions.
+- Content category.
+- Suggested audience.
+- Platform suitability.
+
+### Platform-specific content generation
+
+The same video should receive different content for each platform.
+
+For example:
+
+| Platform | AI output |
+|---|---|
+| YouTube | SEO-friendly title, description, tags |
+| TikTok | Short engaging caption and relevant hashtags |
+| Instagram | Instagram-friendly caption and hashtags |
+| Facebook | Suitable description and engagement-focused caption |
+
+### AI customization
+
+Users should be able to configure:
+
+- Content language.
+- Writing tone.
+- Caption length.
+- Emoji usage.
+- Hashtag quantity.
+- Target audience.
+- Brand voice.
+- Content instructions.
+- Words to avoid.
+- Words to prioritize.
+
+### Important additional feature: AI approval
+
+Before publishing, users can:
+
+- Accept generated content.
+- Edit captions.
+- Regenerate descriptions.
+- Regenerate hashtags.
+- Change titles.
+- Compare different variations.
+- Approve all platforms at once.
+- Approve each platform individually.
+
+AI-generated information must never be presented as verified fact without evidence.
+
+---
+
+## MODULE 05 — Video Processing & Optimization
+
+This module prepares videos for publishing.
+
+### Features
+- Video metadata extraction.
+- Format validation.
+- Resolution validation.
+- Aspect ratio detection.
+- Duration validation.
+- File size validation.
+- Thumbnail extraction.
+- Video compression.
+- Transcoding.
+- Audio extraction.
+- Video preview generation.
+- Duplicate detection.
+- Processing queue.
+
+### Platform compatibility
+
+Check the current requirements of each platform before publication.
+
+If a video needs modification, explain:
+
+- What is wrong.
+- Which platform has the restriction.
+- What needs to change.
+- Whether automatic correction is possible.
+
+Never modify the original uploaded video without permission.
+
+---
+
+## MODULE 06 — Smart Publishing Scheduler
+
+The central publishing engine.
+
+### Scheduling features
+- Schedule individual videos.
+- Schedule multiple videos.
+- Bulk scheduling.
+- Calendar scheduling.
+- Daily scheduling.
+- Weekly scheduling.
+- Custom publishing intervals.
+- Time zone support.
+- Best-time recommendations.
+- Publishing queues.
+- Recurring schedules.
+- Pause and resume schedules.
+- Reschedule videos.
+- Cancel scheduled publications.
+
+### Publishing calendar
+
+Provide four views:
+
+1. Daily.
+2. Weekly.
+3. Monthly.
+4. List view.
+
+Display:
+
+- Scheduled videos.
+- Published videos.
+- Failed videos.
+- Pending approval.
+- Drafts.
+
+### Smart publishing
+
+The system should automatically:
+
+1. Detect a ready video.
+2. Identify its selected platforms.
+3. Generate platform-specific content.
+4. Validate publishing requirements.
+5. Add it to the publishing queue.
+6. Publish at the scheduled time.
+7. Verify the publication result.
+8. Save the resulting post URL.
+9. Update the publishing status.
+10. Retry recoverable failures.
+
+### Publishing limits
+
+Allow users to configure their publishing frequency.
+
+Support the intended high-volume workflow of **10–20 videos per day**, subject to platform API permissions, account restrictions, and applicable publishing limits.
+
+Do not promise that every connected platform will accept that volume.
+
+---
+
+## MODULE 07 — Multi-Platform Publishing Engine
+
+This must be a reliable independent backend service.
+
+### Publishing workflow
+
+Each platform should have its own publishing job.
+
+For example:
+
+One video is scheduled for four platforms.
+
+- YouTube succeeds.
+- Facebook succeeds.
+- Instagram fails.
+- TikTok is waiting for authorization.
+
+The system must record four independent results.
+
+A failure on one platform must not cancel successful publications on the others.
+
+### Features
+- Independent publishing queues.
+- API response validation.
+- Publishing status tracking.
+- Automatic retry.
+- Exponential backoff.
+- Error classification.
+- Duplicate publication prevention.
+- Rate-limit handling.
+- Token expiration handling.
+- Publication verification.
+- Post URL storage.
+- Publishing history.
+
+### Publishing statuses
+
+- Pending.
+- Queued.
+- Processing.
+- Uploading.
+- Publishing.
+- Published.
+- Partially published.
+- Failed.
+- Requires authorization.
+- Requires manual action.
+
+Never mark a video as published simply because an API request was sent. Verify the actual publication result where the platform provides confirmation.
+
+---
+
+## MODULE 08 — Automation Rules
+
+Users should be able to create their own automation workflows.
+
+### Automation examples
+
+**Automation A — Google Drive**
+
+1. User connects Google Drive.
+2. Selects a folder.
+3. New video appears in that folder.
+4. System detects the video.
+5. AI analyzes it.
+6. AI generates platform-specific captions.
+7. Video enters the approval queue or automatic publishing queue.
+
+**Automation B — Automatic Publishing**
+
+1. User uploads 20 videos.
+2. AI analyzes all videos.
+3. System prepares content.
+4. User approves the content.
+5. Scheduler distributes videos according to the configured schedule.
+6. Publishing engine publishes independently to each selected platform.
+
+**Automation C — Failed Publishing**
+
+1. Publication fails.
+2. System identifies the error.
+3. Determines whether it is recoverable.
+4. Retries when appropriate.
+5. Notifies the user if manual intervention is necessary.
+
+### Automation controls
+
+- Enable/disable automation.
+- Pause all workflows.
+- Pause individual workflows.
+- Set publishing limits.
+- Set daily limits.
+- Set platform-specific limits.
+- Configure approval requirements.
+- Configure retry limits.
+- View automation history.
+
+Users must always be able to stop automatic publishing.
+
+---
+
+## MODULE 09 — Analytics & Performance Intelligence
+
+This module should turn actual publishing data into useful decisions.
+
+### Unified analytics dashboard
+
+Display available metrics from connected platforms:
+
+- Views.
+- Reach.
+- Impressions.
+- Likes.
+- Comments.
+- Shares.
+- Saves.
+- Watch time.
+- Average view duration.
+- Completion rate.
+- Audience retention.
+- Follower growth.
+- Engagement rate.
+
+Not every metric is available through every platform API. Display only metrics actually returned by authorized integrations.
+
+### Analytics filters
+
+- Today.
+- Yesterday.
+- Last 7 days.
+- Last 30 days.
+- Last 90 days.
+- Custom date range.
+- Platform.
+- Account.
+- Video.
+- Content category.
+
+### Video performance comparison
+
+Compare:
+
+- Best-performing videos.
+- Lowest-performing videos.
+- Best platforms.
+- Best publishing times.
+- Average views.
+- Engagement performance.
+- Audience retention.
+
+### AI Performance Analyst
+
+This is a particularly valuable feature.
+
+The AI should answer questions such as:
+
+- Which videos performed best this month?
+- Which platform generates the most views?
+- What content performs best?
+- Are viewers watching until the end?
+- Which videos have declining performance?
+- What patterns distinguish successful videos?
+- What should I publish more often?
+
+The AI must base its conclusions on actual analytics, clearly distinguish observations from recommendations, and disclose missing data.
+
+---
+
+## MODULE 10 — AI Content Strategy Assistant
+
+A personal strategy assistant for every workspace.
+
+### Features
+- Content idea generation.
+- Content calendar suggestions.
+- Topic research.
+- Competitor analysis using publicly available information.
+- Trend discovery.
+- Content gap analysis.
+- Audience analysis using available data.
+- Caption improvement.
+- Hashtag research.
+- Content repurposing.
+- Publishing recommendations.
+- Monthly content planning.
+
+### Strategy generation
+
+Users should be able to select:
+
+- Industry.
+- Content category.
+- Target audience.
+- Platforms.
+- Publishing frequency.
+- Language.
+- Content goals.
+
+The AI then prepares a strategy based on those inputs.
+
+Do not assume the user is a particular business or creator. Every workspace starts empty.
+
+---
+
+## MODULE 11 — Notifications & Reporting
+
+### Notifications
+
+- Video uploaded.
+- Analysis completed.
+- Content ready for approval.
+- Video scheduled.
+- Video published.
+- Publication failed.
+- Account disconnected.
+- Token expired.
+- Automation paused.
+- Daily publishing completed.
+- Weekly performance report available.
+
+### Notification channels
+
+- In-app notifications.
+- Email notifications.
+- Browser notifications.
+- Optional messaging integrations.
+
+### Reports
+
+- Daily report.
+- Weekly report.
+- Monthly report.
+- Publishing report.
+- Platform performance report.
+- Failed publication report.
+- Automation report.
+
+Allow PDF and CSV exports where appropriate.
+
+---
+
+## MODULE 12 — Workspace & Team Collaboration
+
+Make the platform useful for individual creators, freelancers, agencies, and businesses.
+
+### Workspace features
+- Create workspace.
+- Rename workspace.
+- Workspace settings.
+- Invite team members.
+- Remove team members.
+- Assign roles.
+- Set permissions.
+- Share content within a workspace.
+- Approval workflows.
+- Team activity logs.
+
+### Suggested workspace roles
+
+| Role | Permissions |
+|---|---|
+| Owner | Full workspace control |
+| Manager | Manage publishing and team |
+| Editor | Upload and edit content |
+| Publisher | Schedule and publish |
+| Analyst | View analytics |
+| Viewer | Read-only access |
+
+The owner of one workspace must never automatically gain access to another workspace.
+
+---
+
+## MODULE 13 — Subscription & Billing System
+
+Prepare the architecture for monetization without inventing prices or activating paid services automatically.
+
+### Features
+- Subscription plans.
+- Free plan.
+- Paid plans.
+- Monthly billing.
+- Annual billing.
+- Plan comparison.
+- Usage tracking.
+- Video processing limits.
+- AI usage limits.
+- Connected account limits.
+- Team member limits.
+- Upgrade and downgrade.
+- Billing history.
+- Invoices.
+- Subscription cancellation.
+- Trial management if offered.
+
+### Usage dashboard
+
+Users should see:
+
+- Videos processed.
+- AI requests used.
+- Publishing jobs.
+- Storage consumed.
+- Connected accounts.
+- Remaining quota.
+
+**Important:** Your original requirement is to keep the operating workflow free of paid subscriptions. Design the application so it can work within available free tiers, clearly disclose limitations, and never silently introduce paid services or unexpected charges.
+
+---
+
+## MODULE 14 — Security, Privacy & Infrastructure
+
+### Security
+- Secure authentication.
+- MFA.
+- Role-based permissions.
+- Server-side authorization.
+- Database Row Level Security.
+- Secure OAuth.
+- Encrypted tokens.
+- Secure file access.
+- API rate limiting.
+- Input validation.
+- Audit logging.
+- Session revocation.
+- Protection against cross-workspace access.
+
+### Privacy
+- Users own their workspace data.
+- Private videos remain private.
+- Private files remain private.
+- Social credentials remain protected.
+- Users can export their data.
+- Users can delete their accounts.
+- Users can revoke integrations.
+- No cross-user data exposure.
+
+### Infrastructure
+- Database backups.
+- Error monitoring.
+- Application logs.
+- Background workers.
+- Job queues.
+- Health checks.
+- Storage monitoring.
+- API monitoring.
+- Retry management.
+- Disaster recovery.
+
+---
+
+## MODULE 15 — GOD MODE: PLATFORM OWNER CONTROL CENTER
+
+This is your private administration area.
+
+Primary owner:
+
+`saidreda2810@gmail.com`
+
+Role:
+
+`GOD / PRIMARY OWNER`
+
+### Platform overview
+
+Display actual platform-wide information:
+
+- Total registered users.
+- Active users.
+- New registrations.
+- Active workspaces.
+- Connected social accounts.
+- Videos processed.
+- Publishing jobs.
+- Successful publications.
+- Failed publications.
+- Storage consumption.
+- API health.
+- Background worker health.
+- Database health.
+
+### User administration
+
+- Search users.
+- View basic account information.
+- Suspend accounts.
+- Reactivate accounts.
+- Manage account status.
+- Assign administrative roles.
+- Manage subscriptions.
+- Handle reports.
+- Review security events.
+
+### Platform configuration
+
+- Global settings.
+- Supported integrations.
+- Feature availability.
+- System maintenance.
+- API configuration.
+- AI provider configuration.
+- Storage configuration.
+- Email configuration.
+- System notifications.
+- Platform-wide publishing controls.
+
+### Privacy boundary
+
+Even the GOD account cannot read users' private messages, private files, passwords, or private personal content.
+
+The owner controls the platform, not the private lives of its users.
+
+Protect this boundary through actual database and backend security, not just dashboard restrictions.
+
+---
+
+# 2. Additional features that would make SAA stand out
+
+These are advanced features I would add after the core system works.
+
+| Feature | What it does | Priority |
+|---|---|---|
+| AI Video Scoring | Evaluates video characteristics and provides improvement suggestions | High |
+| Duplicate Content Detection | Identifies repeated videos | High |
+| Smart Scheduling | Suggests publishing times using historical performance | High |
+| Content Repurposing | Prepares content variations for different platforms | High |
+| AI Thumbnail Assistant | Suggests thumbnail concepts | Medium |
+| Automatic Subtitles | Generates subtitles from speech | Medium |
+| Video Trimming | Creates shorter clips from longer videos | Medium |
+| Trend Discovery | Finds relevant current topics | Medium |
+| Competitor Monitoring | Tracks publicly available competitor content | Medium |
+| A/B Testing | Compares content variations where supported | Medium |
+| White Label | Allows agencies to customize the platform's branding | Later |
+| API Access | Allows external applications to interact with SAA | Later |
+| Webhooks | Sends events to external services | Later |
+| Desktop Companion | Monitors local folders and transfers files to the SaaS | High for local-folder automation |
+
+# 3. The interface I recommend
+
+The SaaS should have a professional dashboard with a consistent navigation structure.
+
+### Main sidebar
+
+| Navigation | Purpose |
+|---|---|
+| Overview | Main dashboard |
+| Video Library | All uploaded videos |
+| AI Studio | Video analysis and content generation |
+| Social Accounts | Connected platforms |
+| Publishing | Publishing queue and history |
+| Calendar | Scheduled content |
+| Automations | Workflow builder |
+| Analytics | Performance dashboard |
+| AI Strategist | AI recommendations |
+| Reports | Performance reports |
+| Team & Workspace | Collaboration and permissions |
+| Notifications | All alerts |
+| Settings | Account and workspace settings |
+| Help Center | Documentation and support |
+
+The GOD administration dashboard should be separate from the normal user dashboard.
+
+# 4. Recommended user journey
+
+This is how I would make the experience work from beginning to end.
+
+
+
+**Step 1 — Registration**
+
+The user creates an account and enters their workspace.
+
+**Step 2 — Initial setup**
+
+A guided setup wizard helps them:
+
+- Choose their workspace name.
+- Select their preferred language.
+- Connect social accounts.
+- Connect Google Drive.
+- Configure AI preferences.
+- Set publishing preferences.
+
+**Step 3 — Upload**
+
+The user uploads videos or selects a Google Drive folder.
+
+**Step 4 — Analysis**
+
+AI analyzes the actual video and prepares platform-specific content.
+
+**Step 5 — Approval**
+
+The user reviews the generated titles, descriptions, and hashtags.
+
+**Step 6 — Scheduling**
+
+The user selects platforms, dates, times, and publishing frequency.
+
+**Step 7 — Publishing**
+
+The backend publishing engine executes each platform's job independently.
+
+**Step 8 — Analytics**
+
+The system collects available performance metrics.
+
+**Step 9 — Intelligence**
+
+AI analyzes the results and recommends improvements.
+
+**Step 10 — Optimization**
+
+The user improves their next publishing cycle based on actual results.
+
+---
+
+# 5. Features I would prioritize for the first release
+
+Don't try to build all 15 modules simultaneously. Build a strong foundation first.
+
+| Phase | Features | Priority |
+|---|---|---|
+| 1 | Authentication, registration, database, workspaces | Critical |
+| 2 | Social account OAuth integrations | Critical |
+| 3 | Video upload and Google Drive | Critical |
+| 4 | AI video analysis and content generation | Critical |
+| 5 | Publishing engine and scheduler | Critical |
+| 6 | Publishing calendar and queue | Critical |
+| 7 | Analytics and reporting | High |
+| 8 | GOD administration dashboard | High |
+| 9 | Automation workflows | High |
+| 10 | Team collaboration | Medium |
+| 11 | AI strategy and recommendations | Medium |
+| 12 | Subscription and billing | Later |
+| 13 | Advanced video processing | Later |
+| 14 | White-label and API access | Later |
+
+# 6. Important technical considerations
+
+There are a few things I particularly want you to account for.
+
+### A. Free operation
+
+Your original requirement was to operate without paid subscriptions.
+
+Design SAA around:
+- Free-tier infrastructure.
+- Free-tier database services.
+- Free official APIs where available.
+- Local processing where practical.
+- Open-source video processing.
+- Efficient AI usage.
+- Optional local AI models.
+
+However, free does not mean unlimited. Storage, processing, AI inference, and API quotas can impose limits.
+
+The platform should display those limits honestly and never activate paid services without approval.
+
+### B. Official API limitations
+
+You cannot assume all social platforms provide identical publishing capabilities.
+
+For example:
+- TikTok may require application review and approval for certain publishing capabilities.
+- Instagram publishing requires supported professional account configurations and permissions.
+- Facebook publishing requires the correct Page permissions.
+- YouTube has API quotas and upload requirements.
+
+Build an integration layer that handles each platform separately.
+
+### C. Local folder automation
+
+If you want automatic monitoring of folders on a user's Windows computer, a normal browser-based SaaS cannot continuously access those folders.
+
+I recommend an optional **SAA Desktop Companion**:
+
+- Windows application.
+- User selects folders.
+- Detects new videos.
+- Uploads files to their private SaaS workspace.
+- Reports upload status.
+- Supports pause/resume.
+- Runs independently of the browser.
+
+This would be particularly useful for users who produce large quantities of videos.
+
+---
+
+# 7. My additional recommendation: Build SAA around three intelligent engines
+
+Rather than treating this as a collection of disconnected tools, organize its backend into three main engines.
+
+| Engine | Responsibility |
+|---|---|
+| Content Intelligence Engine | Understands videos, generates content, analyzes performance |
+| Publishing Automation Engine | Schedules, distributes, publishes, retries, and tracks jobs |
+| Performance Intelligence Engine | Understands analytics and improves future publishing decisions |
+
+These three engines should communicate through a reliable background job system.
+
+This architecture will make the product easier to maintain and expand.
+
+---
+
+# 8. One final master instruction for Google AI Studio
+
+After implementing the features above, give Google AI Studio this instruction:
+
+# SAA — COMPLETE PRODUCT IMPLEMENTATION DIRECTIVE
+
+Transform the existing SAA project into a complete, production-ready, multi-tenant SaaS platform for AI-powered video management, social media automation, publishing, and analytics.
+
+Use the 15-module product architecture defined in the project requirements.
+
+Before implementation:
+
+1. Inspect the complete existing project.
+2. Identify existing functionality.
+3. Identify missing functionality.
+4. Identify incomplete functionality.
+5. Identify architectural problems.
+6. Map every feature to its frontend, backend, database, and external dependencies.
+
+IMPLEMENTATION RULES:
+
+- Build real functionality, not visual simulations.
+- Every button must perform its intended action.
+- Every form must have actual validation and submission.
+- Every dashboard metric must come from real data.
+- Every integration must use its official API.
+- Every user's workspace must be isolated.
+- Every publishing job must be independently tracked.
+- Every AI analysis must use actual input data.
+- Every administrative operation must have server-side authorization.
+- Every sensitive operation must be logged appropriately.
+
+PRODUCT REQUIREMENTS:
+
+- Support independent user registration.
+- Support multiple independent workspaces.
+- Support YouTube, Facebook, Instagram, and TikTok integrations.
+- Support video uploads and Google Drive.
+- Support AI video analysis.
+- Support platform-specific content generation.
+- Support scheduling and bulk publishing.
+- Support automation workflows.
+- Support analytics and reporting.
+- Support team collaboration.
+- Support a protected GOD owner account.
+
+OWNER:
+
+saidreda2810@gmail.com
+
+The owner must have full administrative control over platform operations while respecting users' private information.
+
+PRIORITIES:
+
+1. Correct architecture.
+2. Data security.
+3. Real backend functionality.
+4. Reliable publishing.
+5. Accurate analytics.
+6. Good user experience.
+7. Scalability.
+8. Performance.
+
+Do not invent business information, user data, statistics, API credentials, or integration capabilities.
+
+Do not purchase external services or activate billing without approval.
+
+Do not claim that a feature is complete until it has been implemented and tested.
+
+When an external dependency requires my intervention, produce exact setup instructions.
+
+DELIVERABLE:
+
+A functional SaaS application, complete backend, database, frontend, integrations, automated testing, deployment configuration, documentation, and a prioritized list of remaining external requirements.
+
+Implement incrementally without destroying existing working functionality.
+
+---
+
+## 9. My final product vision
+
+I would position SAA as:
+
+**SAA — Your Entire Video Publishing Operation, One Intelligent Platform.**
+
+The product should serve three types of customers:
+
+1. **Content Creators:** Manage and publish their own videos.
+2. **Businesses & Brands:** Manage multiple platforms and publishing workflows.
+3. **Agencies:** Manage multiple workspaces, teams, and client accounts.
+
+And your own account, `saidreda2810@gmail.com`, remains the primary platform owner.
+
+**One thing I would absolutely not compromise on:** The platform must be genuinely multi-tenant from the database level. You should never build a single-user system and try to turn it into a SaaS later. Build the isolation, permissions, authentication, and ownership architecture correctly from the beginning.

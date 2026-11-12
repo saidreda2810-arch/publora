@@ -1,0 +1,28 @@
+# Firebase App Hosting — Publora backend run configuration.
+# Docs: https://firebase.google.com/docs/app-hosting/configure
+#
+# Secrets are NOT stored here. Set them in the Firebase console
+# (App Hosting → backend → Settings → Environment variables → Secret)
+# or via `firebase apphosting:secrets:set`. Required secrets:
+#   GEMINI_API_KEY, SESSION_SECRET, OAUTH_ENCRYPTION_KEY,
+#   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
+#   META_APP_ID, META_APP_SECRET,
+#   TIKTOK_CLIENT_KEY, TIKTOK_CLIENT_SECRET
+
+runConfig:
+  minInstances: 0
+  maxInstances: 3
+  concurrency: 80
+  cpu: 1
+  memoryMiB: 512
+
+env:
+  - variable: NODE_ENV
+    value: production
+    availability: [RUNTIME]
+  - variable: TRUST_PROXY
+    value: "true"
+    availability: [RUNTIME]
+  - variable: PORT
+    value: "8080"
+    availability: [BUILD, RUNTIME]

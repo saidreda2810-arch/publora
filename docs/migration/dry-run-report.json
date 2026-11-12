@@ -1,0 +1,59 @@
+{
+  "generatedAt": "2026-11-12T11:18:57.714Z",
+  "mode": "dry-run",
+  "counts": {
+    "users": 5,
+    "sessions": 8,
+    "auth_tokens": 53,
+    "workspaces": 10,
+    "workspace_members": 9,
+    "workspace_invitations": 0,
+    "audit_logs": 220,
+    "security_events": 3,
+    "brands": 1,
+    "projects": 4,
+    "content_categories": 0,
+    "videos": 0,
+    "social_accounts": 4,
+    "posts": 4,
+    "post_targets": 4,
+    "analytics_snapshots": 0,
+    "automation_workflows": 0,
+    "automation_executions": 1,
+    "media_assets": 2,
+    "workspace_kv_keys": 25
+  },
+  "orphans": [
+    {
+      "kind": "workspace",
+      "id": "ws_sso_f9e58107eed6",
+      "reason": "ownerId usr_sso_926dca084d3e not found"
+    },
+    {
+      "kind": "post",
+      "id": "test_sched_post_1",
+      "workspaceId": "ws_4e4e6df816b7f6ac",
+      "reason": "brandId brand-a missing"
+    },
+    {
+      "kind": "post",
+      "id": "test_sched_post_1",
+      "workspaceId": "ws_4e4e6df816b7f6ac",
+      "reason": "videoId vid-1 missing"
+    },
+    {
+      "kind": "post",
+      "id": "test_sched_post_1",
+      "workspaceId": "ws_db71c2ae9d3697cd",
+      "reason": "brandId brand-a missing"
+    },
+    {
+      "kind": "post",
+      "id": "test_sched_post_1",
+      "workspaceId": "ws_db71c2ae9d3697cd",
+      "reason": "videoId vid-1 missing"
+    }
+  ],
+  "duplicates": [],
+  "invalid": []
+}

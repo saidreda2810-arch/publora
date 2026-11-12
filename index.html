@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // Apply saved theme before first paint to prevent FOUC
+      (function () {
+        try {
+          var pref = localStorage.getItem('saa_theme_preference') || 'dark';
+          var resolved = pref;
+          if (pref === 'system') {
+            resolved = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+          }
+          var root = document.documentElement;
+          root.classList.add(resolved);
+          root.classList.remove(resolved === 'light' ? 'dark' : 'light');
+          var density = localStorage.getItem('saa_density_preference');
+          if (density === 'compact') root.dataset.density = 'compact';
+          var lang = localStorage.getItem('saa_language_preference');
+          if (lang) root.lang = lang;
+        } catch (e) {}
+      })();
+    </script>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Publora</title>
+    <meta name="description" content="Publora — the all-in-one social media publishing, management, automation, and analytics platform. Publish smarter. Grow further." />
+    <meta property="og:title" content="Publora" />
+    <meta property="og:description" content="Publish smarter. Grow further. All-in-one social media publishing, management, automation, and analytics." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

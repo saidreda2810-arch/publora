@@ -1,0 +1,31 @@
+[
+  {
+    "kind": "workspace",
+    "id": "ws_sso_f9e58107eed6",
+    "reason": "ownerId usr_sso_926dca084d3e not found"
+  },
+  {
+    "kind": "post",
+    "id": "test_sched_post_1",
+    "workspaceId": "ws_4e4e6df816b7f6ac",
+    "reason": "brandId brand-a missing"
+  },
+  {
+    "kind": "post",
+    "id": "test_sched_post_1",
+    "workspaceId": "ws_4e4e6df816b7f6ac",
+    "reason": "videoId vid-1 missing"
+  },
+  {
+    "kind": "post",
+    "id": "test_sched_post_1",
+    "workspaceId": "ws_db71c2ae9d3697cd",
+    "reason": "brandId brand-a missing"
+  },
+  {
+    "kind": "post",
+    "id": "test_sched_post_1",
+    "workspaceId": "ws_db71c2ae9d3697cd",
+    "reason": "videoId vid-1 missing"
+  }
+]

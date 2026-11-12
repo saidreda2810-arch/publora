@@ -1,0 +1,888 @@
+Absolutely. This changes the product from a video publishing automation tool into something much more powerful:
+
+# SRA Social Publisher — AI-Powered Publishing & Performance Optimization Platform
+
+The platform should be brand-agnostic and channel-agnostic. It must not contain any predefined channel names, project names, or assumptions about the content you publish.
+
+You create your own brands, channels, and accounts whenever you need them.
+
+More importantly, I want to add an intelligent optimization engine that doesn't just report views. It analyzes how audiences consume your videos, learns what works, identifies weaknesses, and continuously improves your publishing strategy.
+
+The core concept becomes:
+
+Publish → Measure → Understand → Learn → Optimize → Publish Better.
+
+[AI Video Analytics Dashboard UI, YouTube Performance SaaS Design by Dhruvik Lathiya on Dribbble](https://images.openai.com/static-rsc-4/yPAPQ7c6i8q_BiGyBbsnbJz6I2oZC_TuGWLZ2Ka_P4n006xIeMxnheZE33fJWn5-nUfghO_oxaAbOl6LjPvTrgePXOOhCZfoUhwc7xc5tRMtbEwotSsCoa7We9Vik4OSv26aO68zeXVkWkfgZoqh_z3AZKpc7c9fj3XUCQe8YVQ?purpose=inline)
+
+[Vantage — YouTube Analytics Dashboard](https://images.openai.com/static-rsc-4/awNl95bdc9gJkpAW5Z7ZVdJUL1M_WIUulHxmA7kQs2Vs9k3qmbNu_jJOQasGZYy3SYLJ5lv3F1eP_RtzHxKvTXMxXJMY7XF353mbKnQwrkIL8BgdeheE29XK9L7443xqh_fTTcnWU9PvfpsVXWw6iCTcjKIoHkuCEd4P5HSyj5E?purpose=inline)
+
+[AI Content Analytics Dashboard by NurPix on Dribbble](https://images.openai.com/static-rsc-4/ADal33J-08Ov44vYQcMXL7qY7ohdtfe4gh_EXC_zeUBqo5rubwD5W2B5wz0-_47fOSTbrblNeVBT2kdhMQpMcCNIBtau06mLiFWlJFLNsltKgfCAfOP-aB4M-D2dNZ3fDWZ6GdK4uuzNHULBgH942oSpHEkN3VVEPdweNQKGFx0?purpose=inline)
+
+11
+
+## 1. Remove all predefined projects and channels
+
+The application must start completely empty.
+
+It should allow you to create unlimited:
+
+- Brands.
+- Projects.
+- Social media channels.
+- Connected accounts.
+- Content categories.
+- Publishing schedules.
+
+All information should be configurable by the user.
+
+The system should never contain hardcoded channel names, branding, content personalities, or platform-specific publishing schedules.
+
+Each channel gets its own independent analytics and optimization profile, while the system can also compare performance across channels when useful.
+
+## 2. The new AI Performance Intelligence Engine
+
+Core feature — highest priority
+
+This is the most important new module.
+
+The engine should analyze every published video and learn from its actual performance.
+
+It needs five analytical layers.
+
+### A. Views and reach analysis
+
+Track the available metrics for every platform:
+
+| Metric           | What it tells us                  |
+| ---------------- | --------------------------------- |
+| Views            | How many times content was viewed |
+| Reach            | How many unique accounts saw it   |
+| Impressions      | How often it was displayed        |
+| Likes            | Audience reaction                 |
+| Comments         | Audience interaction              |
+| Shares           | Content shareability              |
+| Saves            | Content value and interest        |
+| Followers gained | Audience growth                   |
+| Profile visits   | Interest in the account           |
+
+The system must distinguish between views, reach, impressions and plays. These are not interchangeable.
+
+### B. Watch behavior and audience retention
+
+This is where the platform becomes intelligent.
+
+For every video, collect available metrics such as:
+
+- Average watch duration.
+- Average percentage watched.
+- Total watch time.
+- Audience retention over time.
+- Completion rate.
+- Rewatch or repeat-view indicators.
+- Early abandonment.
+- Retention drop-off points.
+
+[Increase YouTube Affiliate Revenue: Proven Tips | Post Affiliate Pro](https://images.openai.com/static-rsc-4/rju4c3Pb-cUuxGz1uwsH-uKXSlMfh7NnsQGTIbAZE--IV4Fh5ApPCCMT_sbIEe_5tubiJm5id14Zc2_znF6aRHLUQW2_m9_374UhuaulcGGxA_unzmnx2vNMJ0RZSYuAvimagQ-HIbi5wGh92eGWr8Lu0_xC5yCoN_fFALoWNto?purpose=inline)
+
+[postaffiliatepro.com](https://www.postaffiliatepro.com/blog/increase-youtube-affiliate-revenue/?utm_source=chatgpt.com)
+
+For example, imagine this video:
+
+Example: 30-second video
+
+# 72%
+
+Average percentage watched
+
+# 21.6s
+
+Average watch duration
+
+Audience retention
+
+Illustrative retention data, not actual platform analytics.
+
+0%25%50%75%100%0s3s6s9s12s15s18s21s24s27s30s
+
+Example of how the system should identify audience drop-off across the video timeline.
+
+Optimization opportunity
+
+The system might identify a significant decline near the final seconds and recommend testing a shorter ending.
+
+### C. Watch-pattern intelligence
+
+The engine should go beyond calculating averages.
+
+It should identify patterns such as:
+
+- Viewers leaving within the first 2–3 seconds.
+- A weak opening hook.
+- A strong middle section.
+- A sudden audience drop after a particular scene.
+- Videos with unusually high completion rates.
+- Videos that people replay.
+- Videos that receive many views but few interactions.
+- Videos with low initial reach but strong retention.
+
+It should compare videos of similar durations and content categories rather than comparing everything against one general average.
+
+### D. Content performance analysis
+
+Analyze which creative characteristics correlate with stronger performance:
+
+- Video duration.
+- Opening hook.
+- Editing pace.
+- Scene changes.
+- Subject matter.
+- Visual style.
+- Audio characteristics.
+- Caption length.
+- Hashtags.
+- Posting platform.
+- Day and publishing time.
+
+For deeper visual analysis, optionally use AI to inspect uploaded videos and describe their structure, opening scenes, pacing and storytelling.
+
+This should be an optional AI feature, not a requirement for basic analytics.
+
+### E. Cross-platform comparison
+
+The same video may perform differently on different platforms.
+
+The system should compare:
+
+- Views by platform.
+- Watch duration by platform.
+- Completion rates.
+- Engagement.
+- Audience growth.
+- Performance over time.
+
+It should normalize metrics where definitions differ, and never treat platform-specific view counts as directly equivalent without qualification.
+
+## 3. Automatic publishing-time optimization
+
+Self-improving scheduling
+
+I want this feature to go beyond a conventional scheduling calendar.
+
+The system should learn when each audience is most responsive and automatically adjust future publishing times.
+
+### How it works
+
+1. Collect historical publishing data.
+2. Record the date and exact time of each post.
+3. Measure performance at different intervals after publication.
+4. Compare similar videos published at different times.
+5. Identify the strongest time windows.
+6. Recommend better publishing slots.
+7. Automatically update future schedules if enabled.
+8. Continue learning from new results.
+
+### Example of learned publishing performance
+
+Illustrative average views for comparable content published at different times. Not actual account data.
+
+01.5K3K4.5K6K09:0012:0015:0018:0021:0023:00
+
+In this illustrative example, 18:00 performs best.
+
+The system should not simply conclude that 18:00 is universally best. It should investigate whether that result is consistent across comparable posts, days and platforms.
+
+### Scheduling intelligence
+
+Build an algorithm that calculates an optimal publishing window using:
+
+| Factor                   | Weight |
+| ------------------------ | ------ |
+| Historical views         | 20%    |
+| Average watch duration   | 20%    |
+| Audience retention       | 20%    |
+| Engagement               | 15%    |
+| Follower activity        | 15%    |
+| Recent performance trend | 10%    |
+
+These are initial configurable weights, not proven universal predictors. The system should eventually learn the relative importance of features using historical data and controlled experiments.
+
+It should also consider:
+
+- Day of the week.
+- Local timezone.
+- Time since the last post.
+- Platform-specific audience behavior.
+- Content category.
+- Video duration.
+- Publishing frequency.
+- Sample size and statistical confidence.
+
+### Three scheduling modes
+
+Mode 1
+
+Manual scheduling
+
+You choose all dates and times.
+
+Mode 2
+
+AI recommendations
+
+The system suggests the best time and explains why. You approve the changes.
+
+Mode 3
+
+Autopilot scheduling
+
+The system automatically chooses and adjusts future publishing slots within your configured limits.
+
+One important rule: Autopilot must never silently reschedule a post that's already being uploaded or published. It should only modify eligible future scheduled posts, respecting your minimum spacing, maximum posts per day and blackout periods.
+
+### Continuous learning
+
+The system should maintain a performance history for every recommended time slot.
+
+For example:
+
+- Monday at 18:00: consistently strong.
+- Tuesday at 18:00: average.
+- Friday at 21:00: strong.
+- Saturday at 12:00: weak.
+
+It should also experiment with alternative slots instead of endlessly repeating the same time. This avoids getting stuck with an initially lucky result.
+
+Use controlled comparisons, preferably comparing similar content, with confidence estimates and minimum sample requirements.
+
+## 4. AI Content Improvement Engine
+
+This is another essential feature.
+
+The platform should not merely tell you that a video performed poorly. It should explain potential reasons and suggest what to improve in future content.
+
+### Example analysis report
+
+AI Video Performance Report
+
+Illustrative report
+
+Needs improvement
+
+# 2,450
+
+Views after the measurement window
+
+Detected observations
+
+Weak opening
+
+Significant early audience drop-off during the opening seconds.
+
+Strong middle section
+
+The middle of the video retains viewers better than the opening.
+
+Potential timing issue
+
+Comparable posts have performed better in a different publishing window.
+
+AI recommendations
+
+1. Test a stronger opening hook.
+2. Introduce the main subject earlier.
+3. Remove unnecessary pauses.
+4. Test a more concise ending.
+5. Compare an alternative publishing slot.
+
+   Learning opportunity
+
+### What the AI should improve
+
+| Area            | Possible improvement               |
+| --------------- | ---------------------------------- |
+| Hook            | Stronger first seconds             |
+| Video length    | Better duration based on retention |
+| Editing         | Reduce unnecessary pauses          |
+| Pacing          | Improve scene transitions          |
+| Storytelling    | Stronger sequence and payoff       |
+| Caption         | More relevant descriptions         |
+| Title           | Better clarity and curiosity       |
+| Hashtags        | More relevant tags                 |
+| Publishing time | Better-performing time windows     |
+| Frequency       | Avoid audience fatigue             |
+
+### A very important distinction
+
+The AI must distinguish between:
+
+- Analysis: What happened?
+- Diagnosis: Why might it have happened?
+- Recommendation: What should change?
+- Experiment: How do we test the change?
+- Learning: Did the change actually work?
+
+It must not claim that a weak hook caused low views unless the evidence supports that conclusion.
+
+It should also maintain a version history of recommendations and experiments so you can see which changes helped.
+
+## 5. Platform analytics: realistic API capabilities
+
+There is one technical limitation we must design around: social platforms don't expose identical analytics through their APIs.
+
+This means the analytics engine must have a metric availability layer.
+
+| Platform  | Watch-time analysis                                     | Retention data                                            |
+| --------- | ------------------------------------------------------- | --------------------------------------------------------- |
+| YouTube   | Average duration, percentage and watch time             | Detailed audience-retention reports                       |
+| Instagram | Average and total Reels watch time, where available     | Detailed retention graph may not be available through API |
+| TikTok    | Average play and percentage milestones, where available | Depends on authorized analytics endpoints                 |
+| Facebook  | Video watch-time metrics where permitted                | Depends on account and API permissions                    |
+
+YouTube's official Analytics API supports average view duration, average percentage watched, and audience retention reports with video-time breakdowns.&#x20;
+
+[image](https://www.google.com/s2/favicons?domain=https://developers.google.com\&sz=32)
+
+Google for Developers+1
+
+
+
+Instagram has published Reels insights for average and total watch time, although available API metrics and access can differ from what is displayed in its app.&#x20;
+
+[image](https://www.google.com/s2/favicons?domain=https://about.fb.com\&sz=32)
+
+About Facebook+1
+
+
+
+TikTok's official analytics documentation includes average video play time and 25%, 50%, 75%, and 100% view milestones in supported reporting contexts.&#x20;
+
+[image](https://www.google.com/s2/favicons?domain=https://business-api.tiktok.com\&sz=32)
+
+business-api.tiktok.com+1
+
+
+
+Therefore:
+
+- Never invent unavailable retention graphs.
+- Clearly label metrics that are estimated or calculated.
+- Show the source of every metric.
+- Support manual CSV analytics imports when appropriate.
+- Keep historical snapshots because some APIs restrict historical reporting.
+- Indicate when the latest data was synchronized.
+
+## 6. Advanced self-optimization architecture
+
+The new architecture needs an independent intelligence engine.
+
+\#chatgpt-mermaid-\_r_25f\_{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;fill:rgb(237, 237, 237);}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#chatgpt-mermaid-\_r_25f\_ .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-\_r_25f\_ .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-\_r_25f\_ .error-icon{fill:rgb(48, 48, 48);}#chatgpt-mermaid-\_r_25f\_ .error-text{fill:rgb(237, 237, 237);stroke:rgb(237, 237, 237);}#chatgpt-mermaid-\_r_25f\_ .edge-thickness-normal{stroke-width:1px;}#chatgpt-mermaid-\_r_25f\_ .edge-thickness-thick{stroke-width:3.5px;}#chatgpt-mermaid-\_r_25f\_ .edge-pattern-solid{stroke-dasharray:0;}#chatgpt-mermaid-\_r_25f\_ .edge-thickness-invisible{stroke-width:0;fill:none;}#chatgpt-mermaid-\_r_25f\_ .edge-pattern-dashed{stroke-dasharray:3;}#chatgpt-mermaid-\_r_25f\_ .edge-pattern-dotted{stroke-dasharray:2;}#chatgpt-mermaid-\_r_25f\_ .marker{fill:rgb(175, 175, 175);stroke:rgb(175, 175, 175);}#chatgpt-mermaid-\_r_25f\_ .marker.cross{stroke:rgb(175, 175, 175);}#chatgpt-mermaid-\_r_25f\_ svg{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;}#chatgpt-mermaid-\_r_25f\_ p{margin:0;}#chatgpt-mermaid-\_r_25f\_ .label{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";color:rgb(237, 237, 237);}#chatgpt-mermaid-\_r_25f\_ .cluster-label text{fill:rgb(237, 237, 237);}#chatgpt-mermaid-\_r_25f\_ .cluster-label span{color:rgb(237, 237, 237);}#chatgpt-mermaid-\_r_25f\_ .cluster-label span p{background-color:transparent;}#chatgpt-mermaid-\_r_25f\_ .label text,#chatgpt-mermaid-\_r_25f\_ span{fill:rgb(237, 237, 237);color:rgb(237, 237, 237);}#chatgpt-mermaid-\_r_25f\_ .node rect,#chatgpt-mermaid-\_r_25f\_ .node circle,#chatgpt-mermaid-\_r_25f\_ .node ellipse,#chatgpt-mermaid-\_r_25f\_ .node polygon,#chatgpt-mermaid-\_r_25f\_ .node path{fill:rgb(9, 23, 44);stroke:rgb(31, 78, 148);stroke-width:1px;}#chatgpt-mermaid-\_r_25f\_ .rough-node .label text,#chatgpt-mermaid-\_r_25f\_ .node .label text,#chatgpt-mermaid-\_r_25f\_ .image-shape .label,#chatgpt-mermaid-\_r_25f\_ .icon-shape .label{text-anchor:middle;}#chatgpt-mermaid-\_r_25f\_ .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#chatgpt-mermaid-\_r_25f\_ .rough-node .label,#chatgpt-mermaid-\_r_25f\_ .node .label,#chatgpt-mermaid-\_r_25f\_ .image-shape .label,#chatgpt-mermaid-\_r_25f\_ .icon-shape .label{text-align:center;}#chatgpt-mermaid-\_r_25f\_ .node.clickable{cursor:pointer;}#chatgpt-mermaid-\_r_25f\_ .root .anchor path{fill:rgb(175, 175, 175)!important;stroke-width:0;stroke:rgb(175, 175, 175);}#chatgpt-mermaid-\_r_25f\_ .arrowheadPath{fill:rgb(175, 175, 175);}#chatgpt-mermaid-\_r_25f\_ .edgePath .path{stroke:rgb(175, 175, 175);stroke-width:1px;}#chatgpt-mermaid-\_r_25f\_ .flowchart-link{stroke:rgb(175, 175, 175);fill:none;}#chatgpt-mermaid-\_r_25f\_ .edgeLabel{background-color:rgb(0, 0, 0);text-align:center;}#chatgpt-mermaid-\_r_25f\_ .edgeLabel p{background-color:rgb(0, 0, 0);}#chatgpt-mermaid-\_r_25f\_ .edgeLabel rect{opacity:0.5;background-color:rgb(0, 0, 0);fill:rgb(0, 0, 0);}#chatgpt-mermaid-\_r_25f\_ .labelBkg{background-color:rgba(0, 0, 0, 0.5);}#chatgpt-mermaid-\_r_25f\_ .cluster rect{fill:rgb(48, 48, 48);stroke:rgba(255, 255, 255, 0.15);stroke-width:1px;}#chatgpt-mermaid-\_r_25f\_ .cluster text{fill:rgb(237, 237, 237);}#chatgpt-mermaid-\_r_25f\_ .cluster span{color:rgb(237, 237, 237);}#chatgpt-mermaid-\_r_25f\_ div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:12px;background:rgb(48, 48, 48);border:1px solid rgba(255, 255, 255, 0.15);border-radius:2px;pointer-events:none;z-index:100;}#chatgpt-mermaid-\_r_25f\_ .flowchartTitleText{text-anchor:middle;font-size:18px;fill:rgb(237, 237, 237);}#chatgpt-mermaid-\_r_25f\_ rect.text{fill:none;stroke-width:0;}#chatgpt-mermaid-\_r_25f\_ .icon-shape,#chatgpt-mermaid-\_r_25f\_ .image-shape{background-color:rgb(0, 0, 0);text-align:center;}#chatgpt-mermaid-\_r_25f\_ .icon-shape p,#chatgpt-mermaid-\_r_25f\_ .image-shape p{background-color:rgb(0, 0, 0);padding:2px;}#chatgpt-mermaid-\_r_25f\_ .icon-shape .label rect,#chatgpt-mermaid-\_r_25f\_ .image-shape .label rect{opacity:0.5;background-color:rgb(0, 0, 0);fill:rgb(0, 0, 0);}#chatgpt-mermaid-\_r_25f\_ .label-icon{display:inline-block;height:1em;overflow:visible;vertical-align:-0.125em;}#chatgpt-mermaid-\_r_25f\_ .node .label-icon path{fill:currentColor;stroke:revert;stroke-width:revert;}#chatgpt-mermaid-\_r_25f\_ .node .neo-node{stroke:rgb(31, 78, 148);}#chatgpt-mermaid-\_r_25f\_ [data-look="neo"].node rect,#chatgpt-mermaid-\_r_25f\_ [data-look="neo"].cluster rect,#chatgpt-mermaid-\_r_25f\_ [data-look="neo"].node polygon{stroke:url(#chatgpt-mermaid-\_r_25f\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_25f\_ [data-look="neo"].swimlane.cluster rect{filter:none;}#chatgpt-mermaid-\_r_25f\_ [data-look="neo"].node path{stroke:url(#chatgpt-mermaid-\_r_25f\_-gradient);stroke-width:1px;}#chatgpt-mermaid-\_r_25f\_ [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_25f\_ [data-look="neo"].node .neo-line path{stroke:rgb(31, 78, 148);filter:none;}#chatgpt-mermaid-\_r_25f\_ [data-look="neo"].node circle{stroke:url(#chatgpt-mermaid-\_r_25f\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_25f\_ [data-look="neo"].node circle .state-start{fill:#000000;}#chatgpt-mermaid-\_r_25f\_ [data-look="neo"].icon-shape .icon{fill:url(#chatgpt-mermaid-\_r_25f\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_25f\_ [data-look="neo"].icon-shape .icon-neo path{stroke:url(#chatgpt-mermaid-\_r_25f\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_25f\_ .node text{font-size:14px;font-weight:600;letter-spacing:normal;fill:rgb(153, 206, 255);}#chatgpt-mermaid-\_r_25f\_ .edgeLabels text{font-size:13px;font-weight:600;letter-spacing:-0.08px;fill:rgb(153, 206, 255);}#chatgpt-mermaid-\_r_25f\_ .node tspan[font-weight="normal"],#chatgpt-mermaid-\_r_25f\_ .edgeLabels tspan[font-weight="normal"]{font-weight:600;}#chatgpt-mermaid-\_r_25f\_ .edgeLabel .label rect{opacity:1;rx:13px;ry:13px;fill:rgb(0, 14, 26);stroke:rgb(26, 62, 95);stroke-width:1px;}#chatgpt-mermaid-\_r_25f\_ .node rect,#chatgpt-mermaid-\_r_25f\_ .node circle,#chatgpt-mermaid-\_r_25f\_ .node ellipse,#chatgpt-mermaid-\_r_25f\_ .node polygon,#chatgpt-mermaid-\_r_25f\_ .node path{fill:rgb(0, 40, 77);stroke:rgba(255, 255, 255, 0.1);stroke-width:1px;}#chatgpt-mermaid-\_r_25f\_ .node rect{rx:16px;ry:16px;}#chatgpt-mermaid-\_r_25f\_ .mermaid-decision .label-container{fill:rgb(0, 14, 26);stroke:rgb(26, 62, 95);stroke-dasharray:2,2;}#chatgpt-mermaid-\_r_25f\_ .edgePaths .flowchart-link{stroke:rgb(175, 175, 175);stroke-width:1px;stroke-linecap:round;stroke-linejoin:round;}#chatgpt-mermaid-\_r_25f\_ .marker{fill:rgb(175, 175, 175);stroke:rgb(175, 175, 175);}#chatgpt-mermaid-\_r_25f\_ :root{--mermaid-font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";}Publish VideoCollect Platform AnalyticsNormalize MetricsStore Historical SnapshotsAudience Behavior AnalysisContent Performance AnalysisPublishing Time AnalysisAI Intelligence EngineGenerate RecommendationsOptimization ModeShow InsightsRequest ApprovalApply Approved RulesLearn From ResultsUpdate Future SchedulePublish Next VideosManualApprovalAutopilot
+
+### New technical modules
+
+Add these to the existing application:
+
+| Module                   | Responsibility                    |
+| ------------------------ | --------------------------------- |
+| Analytics Collector      | Fetch platform statistics         |
+| Metric Normalizer        | Standardize metric definitions    |
+| Historical Data Store    | Preserve time-series performance  |
+| Retention Analyzer       | Analyze watch patterns            |
+| Content Intelligence     | Find performance correlations     |
+| Timing Optimizer         | Identify publishing windows       |
+| Experiment Manager       | Compare alternative strategies    |
+| AI Recommendation Engine | Generate actionable suggestions   |
+| Autopilot Controller     | Apply approved optimization rules |
+| Learning Engine          | Evaluate previous recommendations |
+
+### Data collection schedule
+
+For each published post, collect performance at different ages:
+
+- 15 minutes.
+- 1 hour.
+- 3 hours.
+- 6 hours.
+- 12 hours.
+- 24 hours.
+- 48 hours.
+- 7 days.
+- 30 days.
+
+These should be configurable according to API limits and available data. Avoid excessive polling.
+
+This is important because a video that starts slowly might gain traction after 24 hours. The system shouldn't judge it prematurely.
+
+# 7. Updated master prompt for your vibe-coding agent
+
+This is the specification you should add to the original project instructions. It overrides the old channel examples and expands the application into a performance-driven system.
+
+# SRA SOCIAL PUBLISHER
+
+## UPDATED MASTER PRODUCT REQUIREMENTS
+
+### Multi-Platform Publishing, AI Analytics & Autonomous Optimization
+
+Act as a principal software architect, senior full-stack engineer, data engineer, machine learning engineer, AI product designer and DevOps specialist.
+
+Build a complete, locally hosted social media management and automated publishing platform.
+
+This is a real application, not a prototype.
+
+## 1. CRITICAL PRODUCT REQUIREMENTS
+
+The application must be completely generic and configurable.
+
+DO NOT hardcode, mention, create, or assume any specific existing user project, brand, social media channel, content series, or account.
+
+The application must start with an empty workspace.
+
+Users must be able to create, edit, archive and delete their own brands, projects, channels and connected social accounts.
+
+All configurations must be user-controlled.
+
+## 2. CORE APPLICATION
+
+Build the following modules:
+
+- Dashboard
+- Brand and Channel Manager
+- Video Library
+- Content Studio
+- AI Content Assistant
+- Publishing Calendar
+- Publishing Queue
+- Bulk Scheduler
+- Social Account Manager
+- Automation Builder
+- Analytics Dashboard
+- Audience Retention Intelligence
+- Content Performance Intelligence
+- Publishing Time Optimizer
+- Experiment Manager
+- AI Recommendations
+- Autopilot
+- Publishing History
+- Reports
+- Settings
+- Security and System Logs
+
+## 3. MULTI-PLATFORM PUBLISHING
+
+Integrate official APIs for:
+
+- YouTube
+- Instagram
+- Facebook
+- TikTok
+
+Support OAuth, account connections, token refresh, video uploads, metadata configuration, publishing, status verification and error handling.
+
+Create independent publishing adapters.
+
+Respect each platform's API permissions, review requirements, rate limits, publishing restrictions and account eligibility.
+
+Never simulate successful publication.
+
+## 4. ADVANCED ANALYTICS ENGINE
+
+This is a critical component.
+
+Collect all available metrics through authorized platform APIs.
+
+Include:
+
+- Views
+- Reach
+- Impressions
+- Unique viewers where available
+- Likes
+- Comments
+- Shares
+- Saves
+- Followers gained
+- Profile visits
+- Average watch duration
+- Total watch time
+- Average percentage watched
+- Audience retention
+- Completion rate
+- Rewatch metrics where available
+- Video milestone views
+- Engagement rates
+
+Maintain platform-specific metric definitions.
+
+Do not assume every platform offers every metric.
+
+Never invent missing data.
+
+Every metric must record its source, retrieval timestamp, reporting window and availability status.
+
+## 5. AUDIENCE RETENTION INTELLIGENCE
+
+Analyze how viewers consume each video.
+
+Identify:
+
+- Early abandonment.
+- Weak opening hooks.
+- Audience retention curves.
+- Drop-off points.
+- Strong engagement segments.
+- Completion patterns.
+- Rewatch behavior.
+- Strong and weak video sections.
+
+Compare similar videos by duration and content characteristics.
+
+Use native platform retention reports when available.
+
+When detailed retention data is unavailable, use available aggregate metrics and clearly communicate the limitation.
+
+Never fabricate second-by-second retention data.
+
+## 6. CONTENT INTELLIGENCE ENGINE
+
+Analyze performance characteristics:
+
+- Video duration.
+- Opening hook.
+- Editing pace.
+- Scene transitions.
+- Story structure.
+- Visual characteristics.
+- Captions.
+- Titles.
+- Hashtags.
+- Publishing time.
+- Day of week.
+- Content category.
+
+Optionally use AI video analysis to inspect uploaded media and identify potential creative improvements.
+
+Generate recommendations for:
+
+- Stronger openings.
+- Better pacing.
+- Improved storytelling.
+- More effective video duration.
+- Better captions.
+- Better titles.
+- More relevant hashtags.
+- Alternative content approaches.
+
+Recommendations must be evidence-based and distinguish correlation from causation.
+
+The AI must never overwrite original videos.
+
+Store recommendations as separate records.
+
+## 7. PUBLISHING TIME OPTIMIZER
+
+Build an intelligent scheduling system.
+
+Analyze:
+
+- Historical views.
+- Watch duration.
+- Retention.
+- Completion rate.
+- Engagement.
+- Follower activity where accessible.
+- Day of week.
+- Publishing time.
+- Platform.
+- Content category.
+- Video duration.
+- Time since previous post.
+- Recent performance.
+
+Identify the most promising publishing windows for each account.
+
+Support three modes:
+
+1. Manual scheduling.
+2. AI recommendations requiring approval.
+3. Automatic scheduling within user-defined rules.
+
+The optimization engine must:
+
+- Learn from historical results.
+- Compare similar content.
+- Avoid overfitting small samples.
+- Consider confidence and uncertainty.
+- Experiment with alternative time slots.
+- Avoid publishing conflicts.
+- Respect daily limits.
+- Respect minimum spacing.
+- Respect timezone settings.
+- Preserve user-defined blackout periods.
+
+Never automatically modify posts that are already processing or publishing.
+
+Maintain a complete history of scheduling changes.
+
+## 8. EXPERIMENT MANAGEMENT
+
+Implement controlled content and timing experiments.
+
+Allow experiments comparing:
+
+- Different publishing times.
+- Different opening hooks.
+- Different captions.
+- Different titles.
+- Different durations.
+- Different content structures.
+
+Record the hypothesis, test conditions, sample sizes, results and conclusion.
+
+Where possible, use comparable content and control for confounding variables.
+
+Do not declare a winning strategy without sufficient evidence.
+
+The AI must distinguish between statistically meaningful results and preliminary observations.
+
+## 9. AI AUTOPILOT
+
+Build an autonomous optimization controller.
+
+The controller should:
+
+1. Collect analytics.
+2. Detect significant changes.
+3. Identify potential causes.
+4. Generate recommendations.
+5. Evaluate confidence.
+6. Check user-defined permissions.
+7. Apply authorized scheduling changes.
+8. Record every decision.
+9. Monitor the results.
+10. Learn from subsequent performance.
+
+Provide three operating modes:
+
+- Manual: recommendations only.
+- Assisted: approval required.
+- Autopilot: automatic changes within configured limits.
+
+Provide emergency pause and rollback capabilities.
+
+Autopilot must never change account security settings, delete content, or perform irreversible actions without explicit authorization.
+
+## 10. ANALYTICS DASHBOARD
+
+Build advanced visualizations:
+
+- Views over time.
+- Watch time over time.
+- Retention curves.
+- Completion rates.
+- Engagement comparisons.
+- Performance by publishing time.
+- Performance by weekday.
+- Performance by platform.
+- Performance by content category.
+- Best-performing videos.
+- Underperforming videos.
+- Audience activity patterns.
+- Follower growth.
+
+Allow comparisons across configurable date ranges.
+
+Support CSV and PDF exports.
+
+## 11. DATA ARCHITECTURE
+
+Use PostgreSQL and Prisma.
+
+Create dedicated tables for:
+
+- Brands
+- Channels
+- Social Accounts
+- Videos
+- Posts
+- Publishing Jobs
+- Publishing Attempts
+- Analytics Snapshots
+- Metric Definitions
+- Retention Data
+- Content Analysis
+- AI Recommendations
+- Experiments
+- Scheduling Predictions
+- Automation Rules
+- Autopilot Decisions
+- Audit Logs
+
+Preserve historical performance records.
+
+Never overwrite historical analytics with newer values.
+
+Support account-level and post-level data.
+
+## 12. AI PROVIDER ARCHITECTURE
+
+Create a provider-independent AI service.
+
+Support:
+
+- Google Gemini
+- OpenAI
+- Anthropic Claude
+- Ollama
+
+AI must be optional.
+
+Use AI for analysis, explanations, content suggestions and recommendations.
+
+Do not use AI to invent platform analytics or claim unsupported conclusions.
+
+## 13. TECHNICAL STACK
+
+- Next.js
+- TypeScript
+- Tailwind CSS
+- shadcn/ui
+- Node.js
+- PostgreSQL
+- Prisma
+- Redis
+- BullMQ
+- FFmpeg
+- Docker Compose
+
+Build a modular monolith with separate frontend, API and worker processes.
+
+Optimize for Windows 10 with 16 GB RAM.
+
+All core application services must run locally.
+
+External social media APIs and optional cloud media transfer services are permitted.
+
+## 14. SECURITY AND RELIABILITY
+
+- Encrypted OAuth tokens.
+- Secure session management.
+- Server-side API credentials.
+- Persistent job queues.
+- Idempotent publishing.
+- Rate-limit handling.
+- Exponential retries.
+- Crash recovery.
+- Historical analytics backups.
+- Database backups.
+- Audit logs.
+- User-controlled autopilot limits.
+
+## 15. USER INTERFACE
+
+Create a premium dark editorial-tech dashboard.
+
+Use:
+
+- Deep charcoal backgrounds.
+- Electric teal #00FFC5.
+- Light cyan #ADF5FF.
+- Blue #0075A2.
+- Clean typography.
+- Professional analytics charts.
+- Clear information hierarchy.
+- Responsive layouts.
+
+The application should feel like a professional commercial SaaS product.
+
+## 16. DEVELOPMENT APPROACH
+
+Build incrementally.
+
+First inspect the environment and create the architecture.
+
+Then develop:
+
+1. Project foundation.
+2. Database.
+3. Dashboard.
+4. Brand and account management.
+5. Video Library.
+6. Content Studio.
+7. Publishing engine.
+8. YouTube integration.
+9. Meta integrations.
+10. TikTok integration.
+11. Analytics collection.
+12. Retention intelligence.
+13. Content intelligence.
+14. Timing optimizer.
+15. Experiment manager.
+16. AI Autopilot.
+17. Automation.
+18. Security and production testing.
+
+Do not skip testing.
+
+Do not create mock publishing integrations.
+
+Clearly label API features that require approval or are not accessible.
+
+Every milestone must include working code, tests and documentation.
+
+## 17. FINAL OBJECTIVE
+
+The finished application must operate as an intelligent social media publishing and optimization system.
+
+It must not merely publish content.
+
+It must learn from audience behavior, understand content performance, discover better publishing times, suggest creative improvements, test alternative strategies and continuously improve future publishing decisions.
+
+The local dashboard must be accessible at:
+
+[http://localhost:3000](http://localhost:3000)
+
+Begin by producing the complete technical architecture, database design and implementation roadmap. Do not start coding until the architecture has been reviewed.
+
+# 8. The final feature that I strongly recommend: Autopilot Control Center
+
+I would give the system one dedicated control panel where you decide how much autonomy it has.
+
+AI Autopilot Settings
+
+Configuration preview
+
+Operating mode
+
+Manual — insights only
+
+Assisted — approve recommendations
+
+Autopilot — automatically apply permitted changes
+
+Optimization permissions
+
+Use retention analysis to improve future content recommendations
+
+Automatically optimize future publishing times
+
+Optimize future captions, titles and hashtags
+
+Adjust publishing frequency based on performance
+
+Selected configuration
+
+Mode: Approval required
+
+Enabled optimization rules: 3 of 4
+
+Use this configuration
+
+My strongest recommendation: Build the analytics and historical data architecture from the very beginning, not as an upgrade after publishing is complete. Without historical data, the AI cannot genuinely learn.
+
+The ultimate goal is not simply to automate posting. It's to build a system that becomes increasingly intelligent about when to publish, what audiences respond to, and how to improve future content based on real evidence.
+
+Useful official references:
+
+- [YouTube Analytics metrics](https://developers.google.com/youtube/analytics/metrics?utm_source=chatgpt.com)
+- [YouTube audience retention reports](https://developers.google.com/youtube/analytics/channel_reports?utm_source=chatgpt.com)
+- [Instagram Reels watch-time insights](https://about.fb.com/news/2023/04/instagram-reels-trending-audio-and-gifts-updates/?utm_source=chatgpt.com)
+- [TikTok analytics metrics](https://business-api.tiktok.com/portal/docs/supported-metrics-for-a-dimension-in-basic-reports/v1.3?utm_source=chatgpt.com)

@@ -1,0 +1,771 @@
+{
+  "generatedAt": "2026-11-12T11:27:50.045Z",
+  "fileSizes": {
+    "media_catalog.json": 809,
+    "oauth_config.json": 366,
+    "saas_db.json": 7875313,
+    "saas_db.json.tmp.1793897775504": 138276,
+    "saas_db.json.tmp.1794052851208": 144820,
+    "saas_db.json.tmp.1794129884911": 152682,
+    "saas_db.json.tmp.1794129885160": 158515,
+    "saas_db.json.tmp.1794129885838": 159520,
+    "saas_db.json.tmp.1794129885880": 159815,
+    "saas_db.json.tmp.1794129907371": 155783,
+    "saas_db.json.tmp.1794129908098": 158517,
+    "saas_db.json.tmp.1794133204540": 159524,
+    "saas_db.json.tmp.1794133204571": 159524,
+    "saas_db.json.tmp.1794133205006": 160421,
+    "saas_db.json.tmp.1794313434744": 7845177,
+    "saas_db.json.tmp.1794393523516": 7841081,
+    "saas_db.json.tmp.1794400305959": 7849760,
+    "uploads": "DIR"
+  },
+  "saasDbTopLevel": {},
+  "collections": {
+    "users": {
+      "count": 5,
+      "approxBytes": 2545,
+      "fields": {
+        "id": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 5,
+          "distinctCount": 5
+        },
+        "email": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 5,
+          "distinctCount": 5
+        },
+        "passwordHash": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 5,
+          "distinctCount": 5
+        },
+        "salt": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 5,
+          "distinctCount": 5
+        },
+        "fullName": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 5,
+          "distinctCount": 3
+        },
+        "role": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 5,
+          "distinctCount": 2
+        },
+        "isEmailVerified": {
+          "types": [
+            "boolean"
+          ],
+          "nullish": 0,
+          "present": 5,
+          "distinctCount": 2
+        },
+        "status": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 5,
+          "distinctCount": 1
+        },
+        "createdAt": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 5,
+          "distinctCount": 5
+        },
+        "lastLoginAt": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 5,
+          "distinctCount": 5
+        },
+        "preferences": {
+          "types": [
+            "object"
+          ],
+          "nullish": 0,
+          "present": 1,
+          "distinctCount": 0
+        },
+        "profileUpdatedAt": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 1,
+          "distinctCount": 1
+        },
+        "language": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 1,
+          "distinctCount": 1
+        },
+        "mfaEnabled": {
+          "types": [
+            "boolean"
+          ],
+          "nullish": 0,
+          "present": 1,
+          "distinctCount": 1
+        }
+      }
+    },
+    "sessions": {
+      "count": 8,
+      "approxBytes": 2776,
+      "fields": {
+        "id": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 8,
+          "distinctCount": 8
+        },
+        "userId": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 8,
+          "distinctCount": 1
+        },
+        "token": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 8,
+          "distinctCount": 8
+        },
+        "ip": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 8,
+          "distinctCount": 1
+        },
+        "userAgent": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 8,
+          "distinctCount": 2
+        },
+        "createdAt": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 8,
+          "distinctCount": 8
+        },
+        "expiresAt": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 8,
+          "distinctCount": 8
+        }
+      }
+    },
+    "verificationTokens": {
+      "count": 53,
+      "approxBytes": 12042,
+      "fields": {
+        "id": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 53,
+          "distinctCount": 53
+        },
+        "userId": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 53,
+          "distinctCount": 49
+        },
+        "token": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 53,
+          "distinctCount": 53
+        },
+        "type": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 53,
+          "distinctCount": 2
+        },
+        "createdAt": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 53,
+          "distinctCount": 53
+        },
+        "expiresAt": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 53,
+          "distinctCount": 53
+        },
+        "usedAt": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 3,
+          "distinctCount": 3
+        },
+        "attempts": {
+          "types": [
+            "number"
+          ],
+          "nullish": 0,
+          "present": 3,
+          "distinctCount": 1
+        }
+      }
+    },
+    "workspaces": {
+      "count": 10,
+      "approxBytes": 3507,
+      "fields": {
+        "id": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 10,
+          "distinctCount": 10
+        },
+        "name": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 10,
+          "distinctCount": 6
+        },
+        "slug": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 10,
+          "distinctCount": 10
+        },
+        "ownerId": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 10,
+          "distinctCount": 6
+        },
+        "plan": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 10,
+          "distinctCount": 2
+        },
+        "billingCycle": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 10,
+          "distinctCount": 2
+        },
+        "createdAt": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 10,
+          "distinctCount": 10
+        },
+        "settings": {
+          "types": [
+            "object"
+          ],
+          "nullish": 0,
+          "present": 10,
+          "distinctCount": 0
+        }
+      }
+    },
+    "workspaceMembers": {
+      "count": 9,
+      "approxBytes": 1360,
+      "fields": {
+        "id": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 9,
+          "distinctCount": 9
+        },
+        "workspaceId": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 9,
+          "distinctCount": 9
+        },
+        "userId": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 9,
+          "distinctCount": 5
+        },
+        "role": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 9,
+          "distinctCount": 1
+        },
+        "joinedAt": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 9,
+          "distinctCount": 9
+        }
+      }
+    },
+    "auditLogs": {
+      "count": 220,
+      "approxBytes": 60304,
+      "fields": {
+        "id": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 220,
+          "distinctCount": 220
+        },
+        "userId": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 186,
+          "distinctCount": 51
+        },
+        "userEmail": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 200,
+          "distinctCount": 54
+        },
+        "workspaceId": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 148,
+          "distinctCount": 66
+        },
+        "action": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 220,
+          "distinctCount": 22
+        },
+        "details": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 220,
+          "distinctCount": 78
+        },
+        "timestamp": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 220,
+          "distinctCount": 220
+        },
+        "ip": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 71,
+          "distinctCount": 6
+        }
+      }
+    },
+    "securityEvents": {
+      "count": 3,
+      "approxBytes": 882,
+      "fields": {
+        "id": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 3,
+          "distinctCount": 3
+        },
+        "userId": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 3,
+          "distinctCount": 1
+        },
+        "userEmail": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 3,
+          "distinctCount": 1
+        },
+        "workspaceId": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 3,
+          "distinctCount": 1
+        },
+        "action": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 3,
+          "distinctCount": 1
+        },
+        "details": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 3,
+          "distinctCount": 2
+        },
+        "timestamp": {
+          "types": [
+            "string"
+          ],
+          "nullish": 0,
+          "present": 3,
+          "distinctCount": 3
+        }
+      }
+    },
+    "workspaceData": {
+      "count": 5,
+      "approxBytes": 7764827
+    },
+    "systemSettings": {
+      "count": 7,
+      "approxBytes": 838
+    }
+  },
+  "workspaceData": {
+    "workspaces": 5,
+    "blobs": [
+      {
+        "wsHash": "88dbbf1d0f",
+        "exists": true,
+        "approxBytes": 7757823,
+        "counts": {
+          "brands": 1,
+          "projects": 0,
+          "accounts": 0,
+          "categories": 0,
+          "videos": 0,
+          "analytics": 0,
+          "posts": 0,
+          "recommendations": 0,
+          "experiments": 0,
+          "auditLogs": 0,
+          "automationRules": 0,
+          "automationLogs": 1,
+          "videoFolders": 0,
+          "campaigns": 0,
+          "contentPillars": 0,
+          "contentIdeas": 0,
+          "postComments": 0,
+          "calendarSavedViews": 0
+        }
+      },
+      {
+        "wsHash": "228e8d951b",
+        "exists": true,
+        "approxBytes": 2408,
+        "counts": {
+          "brands": 0,
+          "projects": 1,
+          "accounts": 2,
+          "categories": 0,
+          "videos": 0,
+          "analytics": 0,
+          "posts": 1,
+          "recommendations": 0,
+          "experiments": 0,
+          "auditLogs": 0,
+          "automationWorkflows": 0,
+          "automationExecutions": 0,
+          "campaigns": 0,
+          "contentPillars": 0,
+          "contentIdeas": 0,
+          "postComments": 0,
+          "calendarSavedViews": 0
+        }
+      },
+      {
+        "wsHash": "e318502019",
+        "exists": true,
+        "approxBytes": 2408,
+        "counts": {
+          "brands": 0,
+          "projects": 1,
+          "accounts": 2,
+          "categories": 0,
+          "videos": 0,
+          "analytics": 0,
+          "posts": 1,
+          "recommendations": 0,
+          "experiments": 0,
+          "auditLogs": 0,
+          "automationWorkflows": 0,
+          "automationExecutions": 0,
+          "campaigns": 0,
+          "contentPillars": 0,
+          "contentIdeas": 0,
+          "postComments": 0,
+          "calendarSavedViews": 0
+        }
+      },
+      {
+        "wsHash": "fe10eef2c2",
+        "exists": true,
+        "approxBytes": 1036,
+        "counts": {
+          "brands": 0,
+          "projects": 1,
+          "accounts": 0,
+          "categories": 0,
+          "videos": 0,
+          "analytics": 0,
+          "posts": 1,
+          "recommendations": 0,
+          "experiments": 0,
+          "auditLogs": 0,
+          "automationWorkflows": 0,
+          "automationExecutions": 0,
+          "campaigns": 0,
+          "contentPillars": 0,
+          "contentIdeas": 0,
+          "postComments": 0,
+          "calendarSavedViews": 0
+        }
+      },
+      {
+        "wsHash": "ea1166cb50",
+        "exists": true,
+        "approxBytes": 1036,
+        "counts": {
+          "brands": 0,
+          "projects": 1,
+          "accounts": 0,
+          "categories": 0,
+          "videos": 0,
+          "analytics": 0,
+          "posts": 1,
+          "recommendations": 0,
+          "experiments": 0,
+          "auditLogs": 0,
+          "automationWorkflows": 0,
+          "automationExecutions": 0,
+          "campaigns": 0,
+          "contentPillars": 0,
+          "contentIdeas": 0,
+          "postComments": 0,
+          "calendarSavedViews": 0
+        }
+      }
+    ],
+    "keyByteContributors": {
+      "brands": 7756559,
+      "posts": 2676,
+      "autopilotConfig": 1315,
+      "accounts": 950,
+      "calendarSettings": 859,
+      "automationLogs": 281,
+      "projects": 272,
+      "activeBrandId": 42,
+      "categories": 10,
+      "videos": 10,
+      "analytics": 10,
+      "recommendations": 10,
+      "experiments": 10,
+      "auditLogs": 10,
+      "campaigns": 10,
+      "contentPillars": 10,
+      "contentIdeas": 10,
+      "postComments": 10,
+      "calendarSavedViews": 10,
+      "automationWorkflows": 8
+    }
+  },
+  "quality": {
+    "orphans": [
+      {
+        "kind": "workspace",
+        "ref": "ownerId"
+      }
+    ],
+    "duplicates": [],
+    "invalidEnums": [],
+    "dateIssues": [],
+    "summary": {
+      "orphanBrandRefs": 2,
+      "orphanVideoRefs": 2,
+      "orphanAcctRefs": 0,
+      "badDates": 0
+    }
+  },
+  "growth": {
+    "earliest": "2026-11-03T08:12:21.092Z",
+    "latest": "2026-11-12T10:02:05.830Z",
+    "spanDays": 9,
+    "datedRecords": 15
+  },
+  "uploads": {
+    "fileCount": 2,
+    "totalBytes": 0,
+    "extDistribution": {
+      ".jpg": 1,
+      ".mp4": 1
+    },
+    "sessionDirs": 0
+  },
+  "tmpFiles": [
+    {
+      "name": "saas_db.json.tmp.1793897775504",
+      "size": 138276
+    },
+    {
+      "name": "saas_db.json.tmp.1794052851208",
+      "size": 144820
+    },
+    {
+      "name": "saas_db.json.tmp.1794129884911",
+      "size": 152682
+    },
+    {
+      "name": "saas_db.json.tmp.1794129885160",
+      "size": 158515
+    },
+    {
+      "name": "saas_db.json.tmp.1794129885838",
+      "size": 159520
+    },
+    {
+      "name": "saas_db.json.tmp.1794129885880",
+      "size": 159815
+    },
+    {
+      "name": "saas_db.json.tmp.1794129907371",
+      "size": 155783
+    },
+    {
+      "name": "saas_db.json.tmp.1794129908098",
+      "size": 158517
+    },
+    {
+      "name": "saas_db.json.tmp.1794133204540",
+      "size": 159524
+    },
+    {
+      "name": "saas_db.json.tmp.1794133204571",
+      "size": 159524
+    },
+    {
+      "name": "saas_db.json.tmp.1794133205006",
+      "size": 160421
+    },
+    {
+      "name": "saas_db.json.tmp.1794313434744",
+      "size": 7845177
+    },
+    {
+      "name": "saas_db.json.tmp.1794393523516",
+      "size": 7841081
+    },
+    {
+      "name": "saas_db.json.tmp.1794400305959",
+      "size": 7849760
+    }
+  ],
+  "backups": {}
+}

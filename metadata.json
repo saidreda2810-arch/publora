@@ -1,0 +1,8 @@
+{
+  "name": "SRA Social Publisher",
+  "description": "AI-Powered Multi-Platform Video Publishing, Audience Retention Analytics & Autonomous Performance Optimization Platform.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

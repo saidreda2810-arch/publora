@@ -1,0 +1,206 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isGodOwner() {
+      return isSignedIn() 
+        && request.auth.token.email == 'saidreda2810@gmail.com' 
+        && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isUserSelf(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Entity validation helpers
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'role', 'createdAt'])
+        && data.keys().hasOnly(['uid', 'email', 'displayName', 'role', 'emailVerified', 'createdAt', 'updatedAt'])
+        && data.uid is string && data.uid.size() <= 128
+        && data.email is string && data.email.size() <= 255
+        && (data.displayName == null || (data.displayName is string && data.displayName.size() <= 100))
+        && (data.role in ['user', 'creator', 'agency', 'admin', 'god']);
+    }
+
+    function isValidVideo(data) {
+      return data.keys().hasAll(['id', 'userId', 'title', 'status', 'createdAt'])
+        && data.keys().hasOnly(['id', 'userId', 'title', 'description', 'status', 'createdAt', 'updatedAt', 'platforms', 'thumbnailUrl', 'duration', 'driveFileId'])
+        && data.id is string && data.id.size() <= 128
+        && data.userId is string && data.userId.size() <= 128
+        && data.title is string && data.title.size() <= 255
+        && (data.description == null || (data.description is string && data.description.size() <= 2000))
+        && (data.status in ['draft', 'processing', 'ready', 'scheduled', 'published']);
+    }
+
+    function isValidSchedule(data) {
+      return data.keys().hasAll(['id', 'userId', 'videoId', 'scheduledTime', 'status', 'createdAt'])
+        && data.keys().hasOnly(['id', 'userId', 'videoId', 'scheduledTime', 'status', 'createdAt', 'platforms', 'notes'])
+        && data.id is string && data.id.size() <= 128
+        && data.userId is string && data.userId.size() <= 128
+        && data.videoId is string && data.videoId.size() <= 128
+        && data.scheduledTime is string && data.scheduledTime.size() <= 64
+        && (data.status in ['pending', 'published', 'failed']);
+    }
+
+    function isValidWorkspace(data) {
+      return data.keys().hasAll(['id', 'ownerId', 'name', 'plan', 'createdAt'])
+        && data.keys().hasOnly(['id', 'ownerId', 'name', 'plan', 'createdAt', 'members'])
+        && data.id is string && data.id.size() <= 128
+        && data.ownerId is string && data.ownerId.size() <= 128
+        && data.name is string && data.name.size() <= 128
+        && (data.plan in ['free', 'pro', 'enterprise']);
+    }
+
+    function isValidAutomation(data) {
+      return data.keys().hasAll(['id', 'userId', 'title', 'triggerType', 'actionType', 'isActive', 'createdAt'])
+        && data.keys().hasOnly(['id', 'userId', 'title', 'triggerType', 'actionType', 'isActive', 'createdAt', 'conditions'])
+        && data.id is string && data.id.size() <= 128
+        && data.userId is string && data.userId.size() <= 128
+        && data.title is string && data.title.size() <= 128
+        && data.triggerType is string && data.triggerType.size() <= 64
+        && data.actionType is string && data.actionType.size() <= 64
+        && data.isActive is bool;
+    }
+
+    // System connection test ping
+    match /system/{systemDoc} {
+      allow get: if isSignedIn();
+    }
+
+    // User profiles
+    match /users/{userId} {
+      allow get: if isUserSelf(userId) || isGodOwner();
+      allow list: if isGodOwner();
+      
+      allow create: if isUserSelf(userId) 
+        && isValidId(userId)
+        && isValidUser(incoming())
+        && incoming().uid == userId
+        && (incoming().role == 'user' || (incoming().role == 'god' && isGodOwner()));
+
+      allow update: if (isUserSelf(userId) || isGodOwner())
+        && isValidId(userId)
+        && isValidUser(incoming())
+        && incoming().uid == existing().uid
+        && (isGodOwner() || incoming().role == existing().role);
+
+      allow delete: if isGodOwner();
+    }
+
+    // Videos
+    match /videos/{videoId} {
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isGodOwner());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isGodOwner());
+
+      allow create: if isVerified()
+        && isValidId(videoId)
+        && incoming().userId == request.auth.uid
+        && isValidVideo(incoming());
+
+      allow update: if isSignedIn()
+        && (resource.data.userId == request.auth.uid || isGodOwner())
+        && isValidId(videoId)
+        && incoming().userId == resource.data.userId
+        && isValidVideo(incoming());
+
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isGodOwner());
+    }
+
+    // Schedules
+    match /schedules/{scheduleId} {
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isGodOwner());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isGodOwner());
+
+      allow create: if isVerified()
+        && isValidId(scheduleId)
+        && incoming().userId == request.auth.uid
+        && isValidSchedule(incoming());
+
+      allow update: if isSignedIn()
+        && (resource.data.userId == request.auth.uid || isGodOwner())
+        && isValidId(scheduleId)
+        && incoming().userId == resource.data.userId
+        && isValidSchedule(incoming());
+
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isGodOwner());
+    }
+
+    // Workspaces
+    match /workspaces/{workspaceId} {
+      allow get: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isGodOwner());
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isGodOwner());
+
+      allow create: if isVerified()
+        && isValidId(workspaceId)
+        && incoming().ownerId == request.auth.uid
+        && isValidWorkspace(incoming());
+
+      allow update: if isSignedIn()
+        && (resource.data.ownerId == request.auth.uid || isGodOwner())
+        && isValidId(workspaceId)
+        && incoming().ownerId == resource.data.ownerId
+        && isValidWorkspace(incoming());
+
+      allow delete: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isGodOwner());
+    }
+
+    // Automations
+    match /automations/{automationId} {
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isGodOwner());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isGodOwner());
+
+      allow create: if isVerified()
+        && isValidId(automationId)
+        && incoming().userId == request.auth.uid
+        && isValidAutomation(incoming());
+
+      allow update: if isSignedIn()
+        && (resource.data.userId == request.auth.uid || isGodOwner())
+        && isValidId(automationId)
+        && incoming().userId == resource.data.userId
+        && isValidAutomation(incoming());
+
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isGodOwner());
+    }
+
+    // Immutable Audit Logs
+    match /audit_logs/{logId} {
+      allow get, list: if isGodOwner();
+
+      allow create: if isVerified()
+        && isValidId(logId)
+        && incoming().actorId == request.auth.uid
+        && incoming().keys().hasAll(['id', 'actorId', 'actorEmail', 'action', 'targetResource', 'timestamp'])
+        && incoming().keys().hasOnly(['id', 'actorId', 'actorEmail', 'action', 'targetResource', 'timestamp']);
+
+      // Logs are immutable: no modifications or deletions allowed
+      allow update, delete: if false;
+    }
+  }
+}

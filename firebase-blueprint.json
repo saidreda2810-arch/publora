@@ -1,0 +1,116 @@
+{
+  "entities": {
+    "user": {
+      "title": "User Profile",
+      "description": "User account and profile data with role-based access control",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "format": "email", "maxLength": 255 },
+        "displayName": { "type": "string", "maxLength": 100 },
+        "role": { "type": "string", "enum": ["user", "creator", "agency", "admin", "god"], "maxLength": 32 },
+        "emailVerified": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role", "createdAt"]
+    },
+    "video": {
+      "title": "Video Asset",
+      "description": "Uploaded video metadata and status",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 255 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "status": { "type": "string", "enum": ["draft", "processing", "ready", "scheduled", "published"], "maxLength": 32 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "title", "status", "createdAt"]
+    },
+    "schedule": {
+      "title": "Publishing Schedule",
+      "description": "Scheduled post queue item for multi-platform distribution",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "videoId": { "type": "string", "maxLength": 128 },
+        "scheduledTime": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["pending", "published", "failed"], "maxLength": 32 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "videoId", "scheduledTime", "status", "createdAt"]
+    },
+    "workspace": {
+      "title": "Team Workspace",
+      "description": "Multi-tenant workspace for collaborative scheduling and assets",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "ownerId": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 128 },
+        "plan": { "type": "string", "enum": ["free", "pro", "enterprise"], "maxLength": 32 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "name", "plan", "createdAt"]
+    },
+    "automation": {
+      "title": "Automation Rule",
+      "description": "Workflow automation rule triggered on media ingestion or schedule triggers",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 128 },
+        "triggerType": { "type": "string", "enum": ["drive_upload", "scheduled_time", "engagement_threshold"], "maxLength": 64 },
+        "actionType": { "type": "string", "enum": ["auto_caption", "cross_post", "archive"], "maxLength": 64 },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "title", "triggerType", "actionType", "isActive", "createdAt"]
+    },
+    "auditLog": {
+      "title": "Audit Log",
+      "description": "Immutable security and administrative audit record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "actorId": { "type": "string", "maxLength": 128 },
+        "actorEmail": { "type": "string", "format": "email", "maxLength": 255 },
+        "action": { "type": "string", "maxLength": 128 },
+        "targetResource": { "type": "string", "maxLength": 128 },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "actorId", "actorEmail", "action", "targetResource", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "user",
+      "description": "User profile documents keyed by Firebase Auth UID"
+    },
+    "/videos/{videoId}": {
+      "schema": "video",
+      "description": "Video metadata and status documents owned by users"
+    },
+    "/schedules/{scheduleId}": {
+      "schema": "schedule",
+      "description": "Publishing schedules for scheduled content"
+    },
+    "/workspaces/{workspaceId}": {
+      "schema": "workspace",
+      "description": "Collaborative workspaces for teams and agencies"
+    },
+    "/automations/{automationId}": {
+      "schema": "automation",
+      "description": "Automated ingestion and cross-platform publishing rules"
+    },
+    "/audit_logs/{logId}": {
+      "schema": "auditLog",
+      "description": "Immutable governance audit trail for administrator and system actions"
+    }
+  }
+}
