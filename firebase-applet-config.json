@@ -5,5 +5,6 @@
   "authDomain": "protean-braid-gc9s2.firebaseapp.com",
   "storageBucket": "protean-braid-gc9s2.firebasestorage.app",
   "messagingSenderId": "297530278675",
-  "measurementId": ""
+  "measurementId": "",
+  "firestoreDatabaseId": "ai-studio-srasocialpublish-d385a1d1-0a33-4211-bea8-28f3d357275c"
 }

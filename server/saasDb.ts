@@ -262,7 +262,7 @@ export interface SaaSDatabaseSchema {
   systemSettings?: SystemSettings;
 }
 
-const DATA_DIR = path.resolve(process.cwd(), 'data');
+const DATA_DIR = path.resolve(process.env.SRA_DATA_DIR || path.join(process.cwd(), 'data'));
 const DB_FILE = path.join(DATA_DIR, 'saas_db.json');
 
 // Ensure directory exists
