@@ -30,6 +30,7 @@ import {
   UserPreferences,
 } from './saasDb.ts';
 import { bruteForceGuard } from './bruteForceGuard.ts';
+import { findMediaViolations, MEDIA_INGRESS_ERROR_CODE } from './mediaIngress.ts';
 
 export interface AuthenticatedRequest extends Request {
   user?: User;
@@ -622,7 +623,13 @@ authRouter.put('/profile', requireAuth, (req: AuthenticatedRequest, res: Respons
     }
     updates.fullName = fullName.trim();
   }
-  if (avatarUrl !== undefined) updates.avatarUrl = avatarUrl || undefined;
+  if (avatarUrl !== undefined) {
+    const violations = findMediaViolations({ avatarUrl }, { avatarUrl: user.avatarUrl });
+    if (violations.length > 0) {
+      return res.status(400).json({ success: false, code: MEDIA_INGRESS_ERROR_CODE, error: 'Upload the image via POST /api/media/upload and pass the returned URL.' });
+    }
+    updates.avatarUrl = avatarUrl || undefined;
+  }
 
   // Username: format + uniqueness
   if (username !== undefined) {

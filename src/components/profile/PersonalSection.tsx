@@ -2,6 +2,7 @@
 import { useAuth } from '../../context/AuthContext';
 import { SectionCard, Field, inputCls, labelCls, btnPrimary, StatusPill, Avatar, formatDate } from './ui';
 import { User as UserIcon, Camera, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { uploadImageFile } from '../../lib/uploadImage';
 
 const TIMEZONES = [
   'UTC', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
@@ -120,14 +121,15 @@ export const PersonalSection: React.FC = () => {
                     if (!['image/png','image/jpeg','image/webp','image/gif'].includes(file.type)) { setMessage({ type: 'error', text: 'PNG, JPEG, WebP or GIF only.' }); return; }
                     const reader = new FileReader();
                     reader.onload = async () => {
-                      const dataUrl = reader.result as string;
-                      setAvatarPreview(dataUrl);
+                      const preview = reader.result as string;
+                      setAvatarPreview(preview);
                       setAvatarUploading(true);
                       try {
+                        const { url } = await uploadImageFile(apiFetch, file);
                         const res = await apiFetch('/api/saas/account/avatar', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ avatarUrl: dataUrl }),
+                          body: JSON.stringify({ avatarUrl: url }),
                         });
                         const data = await res.json();
                         if (data.success) {

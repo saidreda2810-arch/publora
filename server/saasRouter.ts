@@ -2,6 +2,7 @@ import express, { Response } from 'express';
 import fs from 'fs';
 import path from 'path';
 import { requireAuth, requireRole, requireGodOwner, AuthenticatedRequest } from './authRouter.ts';
+import { findMediaViolations, findTopLevelMediaViolations, MEDIA_INGRESS_ERROR_CODE } from './mediaIngress.ts';
 import {
   getWorkspaceData,
   saveWorkspaceData,
@@ -153,6 +154,18 @@ saasRouter.post('/state', (req: AuthenticatedRequest, res: Response) => {
         stateVersion: currentVersion,
       });
     }
+  }
+
+  // Media-in-DB guard: reject NEW data: URLs / oversized media fields.
+  // Values identical to what is already stored are grandfathered so clients
+  // can round-trip legacy records until WP5 extraction rewrites them.
+  const mediaViolations = findMediaViolations(data, current);
+  if (mediaViolations.length > 0) {
+    return res.status(400).json({
+      success: false,
+      code: MEDIA_INGRESS_ERROR_CODE,
+      error: `Media must be uploaded via the media API, not embedded: ${mediaViolations.slice(0, 5).join('; ')}`,
+    });
   }
 
   // Referential integrity on the merged result.
@@ -503,6 +516,10 @@ saasRouter.post('/brands', (req: AuthenticatedRequest, res: Response) => {
   if (!wsId) return res.status(400).json({ success: false, error: 'Workspace required' });
   const { name, ...rest } = req.body || {};
   if (!name || !String(name).trim()) return res.status(400).json({ success: false, error: 'Brand name is required' });
+  const mediaViolations = findTopLevelMediaViolations(req.body);
+  if (mediaViolations.length > 0) {
+    return res.status(400).json({ success: false, code: MEDIA_INGRESS_ERROR_CODE, error: `Media must be uploaded via the media API, not embedded: ${mediaViolations.slice(0, 3).join('; ')}` });
+  }
   const data = getWorkspaceData(wsId);
   const brands = data.brands || [];
   if (brands.some((b: any) => b.name.toLowerCase() === String(name).trim().toLowerCase())) {
@@ -530,6 +547,10 @@ saasRouter.patch('/brands/:id', (req: AuthenticatedRequest, res: Response) => {
   if (idx === -1) return res.status(404).json({ success: false, error: 'Brand not found' });
   const access = canAccessBrand(req, brands[idx], 3); // editor rank required to edit
   if (!access.ok) return res.status(403).json({ success: false, error: 'Insufficient brand permissions' });
+  const mediaViolations = findMediaViolations(req.body, brands[idx]);
+  if (mediaViolations.length > 0) {
+    return res.status(400).json({ success: false, code: MEDIA_INGRESS_ERROR_CODE, error: `Media must be uploaded via the media API, not embedded: ${mediaViolations.slice(0, 3).join('; ')}` });
+  }
   const { members, ...rest } = req.body || {};
   // Validate member roles if provided
   if (members !== undefined) {
@@ -2209,19 +2230,20 @@ saasRouter.post('/account/delete-request', requireAuth, (req: AuthenticatedReque
   res.json({ success: true, message: 'Account scheduled for deletion. You have 30 days to contact support for recovery.' });
 });
 
-// Avatar upload — base64 data URL, validated, size-capped
+// Avatar reference — accepts a media URL/path from the media upload API.
+// data: URLs are rejected (WP1): upload via POST /api/media/upload first.
 saasRouter.post('/account/avatar', requireAuth, (req: AuthenticatedRequest, res: Response) => {
   const user = req.user!;
   const { avatarUrl } = req.body || {};
   if (!avatarUrl || typeof avatarUrl !== 'string') return res.status(400).json({ success: false, error: 'avatarUrl required' });
-  if (!avatarUrl.startsWith('data:image/')) return res.status(400).json({ success: false, error: 'Must be an image data URL' });
-  const allowed = ['data:image/png', 'data:image/jpeg', 'data:image/webp', 'data:image/gif'];
-  if (!allowed.some((p) => avatarUrl.startsWith(p))) return res.status(400).json({ success: false, error: 'PNG, JPEG, WebP or GIF only' });
-  const sizeBytes = Math.round((avatarUrl.length - avatarUrl.indexOf(',') - 1) * 0.75);
-  if (sizeBytes > 2 * 1024 * 1024) return res.status(400).json({ success: false, error: 'Image must be under 2MB' });
+  const violations = findMediaViolations({ avatarUrl }, { avatarUrl: user.avatarUrl });
+  if (violations.length > 0) {
+    return res.status(400).json({ success: false, code: MEDIA_INGRESS_ERROR_CODE, error: 'Upload the image via POST /api/media/upload and pass the returned URL.' });
+  }
+  if (avatarUrl.length > 2048) return res.status(400).json({ success: false, error: 'avatarUrl too long' });
   const db = getDb();
   const u = db.users.find((x) => x.id === user.id);
-  if (u) { u.avatarUrl = avatarUrl; saveDatabase(db); }
+  if (u) { u.avatarUrl = avatarUrl || undefined; saveDatabase(db); }
   res.json({ success: true, avatarUrl });
 });
 

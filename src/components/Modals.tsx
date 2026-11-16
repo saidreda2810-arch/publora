@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { GiSparkles } from 'react-icons/gi';
 import { Platform } from '../types';
+import { uploadImageFile } from '../lib/uploadImage';
 
 interface ModalProps {
   isOpen: boolean;
@@ -531,6 +532,7 @@ export const NewVideoModal: React.FC<ModalProps> = ({ isOpen, onClose }) => {
 // 3. New Brand Modal
 export const NewBrandModal: React.FC<ModalProps & { brand?: any }> = ({ isOpen, onClose, brand }) => {
   const { createBrand, updateBrand, brands } = usePublisher();
+  const { apiFetch } = useAuth();
   const isEdit = Boolean(brand);
 
   const [name, setName] = useState('');
@@ -573,31 +575,33 @@ export const NewBrandModal: React.FC<ModalProps & { brand?: any }> = ({ isOpen, 
 
   if (!isOpen) return null;
 
-  const handleLogo = (file?: File | null) => {
+  const [imgUploading, setImgUploading] = useState<'' | 'logo' | 'cover'>('');
+  const handleImage = async (file: File | null | undefined, kind: 'logo' | 'cover') => {
     if (!file) return;
-    if (!['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'].includes(file.type)) {
-      setErrors((e) => ({ ...e, logo: 'PNG, JPG, WebP or SVG only' })); return;
+    const key = kind === 'logo' ? 'logo' : 'cover';
+    const allowed = kind === 'logo'
+      ? ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml']
+      : ['image/png', 'image/jpeg', 'image/webp'];
+    const maxBytes = kind === 'logo' ? 2 * 1024 * 1024 : 4 * 1024 * 1024;
+    if (!allowed.includes(file.type)) {
+      setErrors((e) => ({ ...e, [key]: kind === 'logo' ? 'PNG, JPG, WebP or SVG only' : 'PNG, JPG or WebP only' })); return;
     }
-    if (file.size > 2 * 1024 * 1024) {
-      setErrors((e) => ({ ...e, logo: 'Max 2MB' })); return;
+    if (file.size > maxBytes) {
+      setErrors((e) => ({ ...e, [key]: `Max ${kind === 'logo' ? '2MB' : '4MB'}` })); return;
     }
-    const reader = new FileReader();
-    reader.onload = () => { setLogoUrl(String(reader.result)); setErrors((e) => ({ ...e, logo: '' })); };
-    reader.readAsDataURL(file);
+    setImgUploading(kind);
+    setErrors((e) => ({ ...e, [key]: '' }));
+    try {
+      const { url } = await uploadImageFile(apiFetch, file);
+      if (kind === 'logo') setLogoUrl(url); else setCoverUrl(url);
+    } catch (err: any) {
+      setErrors((e) => ({ ...e, [key]: err?.message || 'Upload failed' }));
+    } finally {
+      setImgUploading('');
+    }
   };
-
-  const handleCover = (file?: File | null) => {
-    if (!file) return;
-    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
-      setErrors((e) => ({ ...e, cover: 'PNG, JPG or WebP only' })); return;
-    }
-    if (file.size > 4 * 1024 * 1024) {
-      setErrors((e) => ({ ...e, cover: 'Max 4MB' })); return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => { setCoverUrl(String(reader.result)); setErrors((e) => ({ ...e, cover: '' })); };
-    reader.readAsDataURL(file);
-  };
+  const handleLogo = (file?: File | null) => { void handleImage(file, 'logo'); };
+  const handleCover = (file?: File | null) => { void handleImage(file, 'cover'); };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
