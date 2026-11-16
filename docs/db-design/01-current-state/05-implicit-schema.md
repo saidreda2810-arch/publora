@@ -5,7 +5,7 @@ Types live in `src/types/` (7 files, ~53 exported interfaces/types) [READ]; serv
 ## Types vs actual data — key diffs [RUN data_inventory.json + READ types]
 
 | Entity | In types? | In data? | Diff / conflict |
-|---|---|---|---|
+| --- | --- | --- | ---  |
 | `Brand.avatarUrl / logoUrl / coverImageUrl` | ✅ optional strings | ✅ present — **as multi-MB base64 data-URLs** | Type says `string` (URL implied); data holds `data:image/...;base64,...`. No size constraint anywhere. SEC-20 confirmed at 7.7 MB scale. |
 | `SocialAccount` (types/social.ts) | ✅ rich shape: `brandId, platform, accountName, handle, isConnected, apiPermissions{…}, channels[]` | ⚠️ `workspaceData.accounts[]` records are **flatter** — actual fields observed: id, platform, brandId?, accountName/handle, status… The OAuth-store shape is `SocialConnectionAccount` (different interface, `provider`, `externalAccountId`, `channels[]`…) | **Two parallel account models**: blob `accounts[]` (UI-facing) vs `social_connections.json` (OAuth tokens). Fields don't map 1:1 — migration must reconcile. |
 | `ScheduledPost` (content.ts) | ✅ `brandId, videoId, channelPlatforms[], scheduledTime, status, publishOperationId, publishingEvents[], retryCount, nextRetryAt, reviewStatus…` | ✅ posts carry these + extras (`platformPostId`, `postUrl`, `accountId` used by T1.0 ref-check but **not in the type**) | `post.accountId`, `post.platformPostId`, `post.postUrl`, `post.channelPlatforms` vs `platforms` alias used in migration script — field-name drift between writer (frontend) and reader (engine/migration). |
@@ -18,7 +18,7 @@ Types live in `src/types/` (7 files, ~53 exported interfaces/types) [READ]; serv
 ## ID formats [READ+RUN]
 
 | Entity | Format | Example pattern | Unique? |
-|---|---|---|---|
+| --- | --- | --- | ---  |
 | users | `usr_` + 16 hex | `usr_e53ccd86d0b52040` | yes (email unique enforced app-level only) |
 | workspaces | `ws_` + 16 hex | `ws_ed80e9021894a7f6` | slug unique-ish (app-level) |
 | sessions | `ses_` + 16 hex | — | token hash unique |

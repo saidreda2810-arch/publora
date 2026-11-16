@@ -7,7 +7,7 @@ R = reads, W = writes, RW = both. Evidence: grep counts + code reads this sessio
 ## Module × store matrix
 
 | Module | saas_db core* | workspaceData blob | social_connections | oauth_config | media_catalog | drive_*.json | upload_policy | uploads/ disk | .sessions/ | backups/ | In-memory |
-|---|---|---|---|---|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | ---  |
 | authRouter | RW (users, sessions, tokens, ws/members R) | — | — | — | — | — | — | — | — | — | — |
 | saasRouter | RW (all collections + settings) | **RW (35 get / 17 save calls)** | R | R | — | — | R/W (upload-policy admin) | R (quota scan) | — | RW (backup create/verify/restore) | Maps for metrics |
 | mediaRouter | R (workspaceData.videos for quota?) | R | — | — | RW | — | R | **RW** | RW (file-based sessions) | — | — |

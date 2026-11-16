@@ -3,7 +3,7 @@
 ## Runtime & toolchain [RUN]
 
 | Tool | Version |
-|---|---|
+| --- | ---  |
 | Node.js | v26.13.1 (`C:\Program Files\nodejs`) |
 | npm | 11.20.0 |
 | Shell note | PowerShell execution policy blocks `npm.ps1` → all npm commands run via `npm.cmd` / `npx.cmd` |
@@ -11,7 +11,7 @@
 ## Verification commands [RUN — this session, post-remediation code]
 
 | Command | Result |
-|---|---|
+| --- | ---  |
 | `npm run lint` (`tsc --noEmit`) | **PASS** — 0 errors |
 | `npm test` (`tsx tests/run-all-tests.ts`) | **41/42 PASS (97.6%)** — 1 failure: `firebase-applet-config.json exists with valid parameters` → "Config projectId must match assigned project" (pre-existing config mismatch, unrelated to code) |
 | `npm run build` (`vite build`) | **PASS** — `✓ built`; warning: main chunk 2,231 kB (gzip 520 kB) > 500 kB limit |
@@ -32,7 +32,7 @@
 Server run locally on `:3457` (`npm run dev`, real `data/` dir — DATA_DIR is hardcoded `process.cwd()/data`, no env override [READ saasDb.ts:264]).
 
 | Step | Result |
-|---|---|
+| --- | ---  |
 | register (new email) | ✅ 201, workspace auto-created, HttpOnly cookie set, **no sessionToken in body** |
 | login | ✅ 200 + cookie |
 | GET/POST `/api/saas/state` | ✅ GET returns `stateVersion`; POST with correct `baseVersion`→200, wrong→409, unknown key→400, orphan brandId→400, shrink-to-0→409 |

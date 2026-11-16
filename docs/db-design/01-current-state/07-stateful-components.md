@@ -3,7 +3,7 @@
 All module-level state that dies on restart or diverges across instances [READ server/*.ts].
 
 | Component | File | State | Lifetime | Multi-instance safe? | Migration target |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | ---  |
 | `dbCache` | saasDb.ts | parsed saas_db.json | until next write | ❌ (stale reads) | eliminated by PgRepo |
 | `stateVersions` | saasDb.ts | ws→int counter | persisted in JSON | ⚠️ works but racy | `workspaces.state_version` column + atomic UPDATE |
 | Rate limiters (auth 30/m, ai 20/m) | server.ts, aiRouter | sliding-window counters | process | ❌ per-instance → N× limit | Redis or Postgres fixed-window table |

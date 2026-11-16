@@ -5,7 +5,7 @@
 ## File sizes [RUN]
 
 | File | Size | Notes |
-|---|---|---|
+| --- | --- | ---  |
 | `saas_db.json` | **7,875,313 B (~7.5 MiB)** | single JSON doc, rewritten atomically per mutation |
 | `saas_db.json.tmp.*` | **14 files** | 11 × ~140–160 KB (pre-brand-upload era) + 3 × ~7.8 MB (post-upload). Tmp files are **not cleaned on crash** and include full DB copies |
 | `social_connections.json` | absent/empty | oauthStore creates on first connect |
@@ -17,7 +17,7 @@
 ## saas_db.json top-level collections [RUN]
 
 | Collection | Records | ~Bytes | % of file |
-|---|---|---|---|
+| --- | --- | --- | ---  |
 | workspaceData (blob) | 5 workspaces keyed | **7,764,827** | **98.6%** |
 | auditLogs | 220 | 60,304 | 0.8% |
 | verificationTokens | 53 | 12,042 | 0.15% |
@@ -34,7 +34,7 @@
 `workspaceData` is 98.6% of the file, and **a single workspace blob is 7,757,823 B** — inside it, **one `brands[]` record is 7,756,549 B**, almost entirely three base64 data-URL fields:
 
 | brand field | ~Bytes | content |
-|---|---|---|
+| --- | --- | ---  |
 | `coverImageUrl` | 3,253,284 | base64 data-URL image |
 | `logoUrl` | 2,251,524 | base64 data-URL image |
 | `avatarUrl` | 2,251,524 | base64 data-URL image (same image as logo) |
@@ -46,7 +46,7 @@ The other 4 workspace blobs are tiny (1–2.4 KB): mostly `projects:1, accounts:
 ## Per-workspace blob sizes [RUN] (wsHash = sha256(wsId)[:10], no raw ids)
 
 | wsHash | Bytes | Notable contents |
-|---|---|---|
+| --- | --- | ---  |
 | 88dbbf1d0f | 7,757,823 | 1 brand (base64 images), 1 automationLog |
 | 228e8d951b | 2,408 | 1 project, 2 accounts, 1 post |
 | e318502019 | 2,408 | same shape (likely duplicate fixture) |

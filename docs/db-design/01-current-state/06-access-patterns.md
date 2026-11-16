@@ -5,7 +5,7 @@ Full call-graph map: `03-data-access-map.md`. This doc classifies each hot path 
 ## Pattern classes observed [READ]
 
 | Class | Where | Frequency | Cost today |
-|---|---|---|---|
+| --- | --- | --- | ---  |
 | **Full-file rewrite** | `saveDatabase()` → write tmp + rename | every mutation | O(file) = **7.5 MB** per write |
 | **Full-file parse** | `loadDatabase()` at boot; cache invalidated on every write | per boot + per write | 7.5 MB JSON.parse per save cycle |
 | **Workspace blob read-modify-write** | `getWorkspaceData`/`saveWorkspaceData` | per saas API call | deserializes whole blob; shallow merge loses nested diffs |
@@ -18,7 +18,7 @@ Full call-graph map: `03-data-access-map.md`. This doc classifies each hot path 
 ## Hot path → required index/constraint [INFER from code + RUN counts]
 
 | Hot path | Query shape | Target index / constraint |
-|---|---|---|
+| --- | --- | ---  |
 | Session auth (every authed request) | `WHERE token_hash = $1` | `sessions.token_hash UNIQUE` ✅ in DDL |
 | Email login/register | `WHERE lower(email) = $1` | `users.email UNIQUE` (citext or lower index) ✅ |
 | Magic-link/OTP verify | `WHERE user_id AND type AND token_hash` + expiry | `auth_tokens(user_id,type,token_hash)` + `expires_at` partial index ✅ |

@@ -6,7 +6,7 @@
 ## Router-level auth (applies to every route in the router) [READ]
 
 | Router | Mount | Router-level middleware |
-|---|---|---|
+| --- | --- | ---  |
 | authRouter | `/api/auth` | none (per-route guards; `authRateLimiter` at mount in server.ts) |
 | saasRouter | `/api/saas` | **`requireAuth` on ALL 86 routes** + `checkMaintenanceMode` at mount |
 | mediaRouter | `/api/media` | **`requireAuth` on ALL 9 routes** + `checkMaintenanceMode` |
@@ -24,7 +24,7 @@ Legend: MW = middleware detected on the route line; router-level `requireAuth` a
 
 ### server.ts (8) — infra
 | Method | Path | MW | Notes |
-|---|---|---|---|
+| --- | --- | --- | ---  |
 | GET | /health, /api/health | — | liveness, minimal payload |
 | GET | /api/system/diagnostics | requireAuth+requireGodOwner | detailed diagnostics (moved out of /health) |
 | GET | /api/system/public-config | — | maintenance flag + announcements (public) |
@@ -35,7 +35,7 @@ Legend: MW = middleware detected on the route line; router-level `requireAuth` a
 
 ### authRouter (19) — /api/auth
 | Method | Path | MW | Reads | Writes | Notes |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | ---  |
 | POST | /register | bruteForceGuard | — | users, workspaces, workspaceMembers, verificationTokens, securityEvents, auditLogs | creates workspace+member in one flow; returns cookie only |
 | POST | /login | bruteForceGuard | users, sessions | sessions, users.lastLoginAt, securityEvents | scrypt verify; cookie set |
 | GET | /me | requireAuth | users, workspaces, workspaceMembers | — | session→user→workspace chain |
@@ -74,7 +74,7 @@ Grouped by function (full per-route detail in `endpoints.csv`):
 
 ### mediaRouter (9) — /api/media — ALL requireAuth
 | Method | Path | Notes |
-|---|---|---|
+| --- | --- | ---  |
 | GET | /policy | upload limits per plan (uploadPolicy.json / DB?) |
 | GET | / | list media (media_catalog.json + disk scan?) |
 | POST | /upload | base64 JSON, 150mb parser; magic-byte sniff |
@@ -83,7 +83,7 @@ Grouped by function (full per-route detail in `endpoints.csv`):
 
 ### oauthRouter (11) — /api/oauth
 | Method | Path | MW | Notes |
-|---|---|---|---|
+| --- | --- | --- | ---  |
 | GET | /config | requireAuth | OAuth client config status (masked) |
 | POST | /config | requireAuth+requireGodOwner | set provider credentials → oauth_config.json |
 | GET | /diagnostics | requireAuth+requireGodOwner | connection health |
@@ -102,7 +102,7 @@ CSRF middleware (`authRouter.ts` ~L223-234) explicitly exempts paths ending `/ca
 
 ### driveRouter (10) — /api/drive
 | Method | Path | MW | Notes |
-|---|---|---|---|
+| --- | --- | --- | ---  |
 | POST | /authorize-url | requireAuth | Google OAuth URL + PKCE → pending attempt |
 | GET | /callback | — | **public** OAuth redirect target (state-validated) |
 | GET | /connections | requireAuth | drive_connections.json |
@@ -117,7 +117,7 @@ CSRF middleware (`authRouter.ts` ~L223-234) explicitly exempts paths ending `/ca
 ## Data-access summary per router (detail in 03-data-access-map.md)
 
 | Router | Primary stores touched |
-|---|---|
+| --- | ---  |
 | authRouter | saas_db: users, sessions, verificationTokens, workspaces(read), workspaceMembers(read), securityEvents, auditLogs |
 | saasRouter | saas_db: EVERYTHING (workspaceData blob R/W, users, sessions, workspaceMembers, invitations, systemSettings, auditLogs, securityEvents) + oauthStore(accounts) + filesystem (backups/, uploads quota) |
 | mediaRouter | media_catalog.json, data/uploads/**, uploadPolicy, saas_db.workspaceData.videos (quota?) |
