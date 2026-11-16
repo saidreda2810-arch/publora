@@ -3,7 +3,13 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { requireAuth, AuthenticatedRequest } from './authRouter.ts';
-import { logAuditEvent } from './saasDb.ts';
+import { logAuditEvent, getWorkspaceData } from './saasDb.ts';
+import { getStorageProvider } from './storage/storageProvider.ts';
+import {
+  createAsset, findBySha256, getAsset, listAssets, softDeleteAsset,
+  signMediaKey, verifyMediaSignature, assetPublicUrl, orphanReport,
+  usageBytes as assetsUsageBytes, videoCount as assetsVideoCount,
+} from './mediaAssets.ts';
 import {
   getUploadPolicy, planLimitBytes, workspaceUsageBytes, workspaceVideoCount,
   createSession, getSession, saveSession, deleteSession, listActiveSessions,
@@ -63,6 +69,65 @@ const MAX_FILE_SIZE = 100 * 1024 * 1024; // legacy fallback; policy governs real
 const fmtBytes = (b: number) =>
   b >= 1073741824 ? `${(b / 1073741824).toFixed(2)} GB` : b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${(b / 1024).toFixed(0)} KB`;
 
+/**
+ * WP2: persist bytes via StorageProvider + media_assets record.
+ * Dedupes by sha256 within the workspace; returns the record plus a fresh
+ * signed URL in the legacy `url` field for frontend compatibility.
+ */
+async function persistAsset(input: {
+  workspaceId: string; userId: string; buffer: Buffer;
+  originalName: string; mimeType: string;
+}): Promise<any> {
+  const sha256 = crypto.createHash('sha256').update(input.buffer).digest('hex');
+  const existing = findBySha256(input.workspaceId, sha256);
+  if (existing) return { ...existing, url: assetPublicUrl(existing), deduplicated: true };
+
+  const ext = path.extname(input.originalName) || '';
+  const storageKey = `ws/${input.workspaceId}/media/${sha256}${ext}`;
+  const store = getStorageProvider();
+  if (!(await store.head(storageKey))) {
+    await store.put(storageKey, input.buffer, input.mimeType);
+  }
+  const rec = createAsset({
+    workspaceId: input.workspaceId, userId: input.userId, storageKey, sha256,
+    mimeType: input.mimeType, sizeBytes: input.buffer.length, originalName: input.originalName,
+  });
+  return { ...rec, url: assetPublicUrl(rec), deduplicated: false };
+}
+
+// GET /api/media/object — signed-URL object serving (replaces public /uploads for new assets)
+mediaRouter.get('/object', async (req: AuthenticatedRequest, res: Response) => {
+  const key = String(req.query.key || '');
+  const exp = Number(req.query.exp);
+  const sig = String(req.query.sig || '');
+  if (!key.startsWith('ws/') || !verifyMediaSignature(key, exp, sig)) {
+    return res.status(403).json({ success: false, error: 'Invalid or expired media URL' });
+  }
+  // Tenant check: key embeds workspaceId — caller must be member of it.
+  const wsId = key.split('/')[1];
+  const ws = (req as any).workspace;
+  if (ws?.id !== wsId && req.user!.role !== 'platform_admin') {
+    return res.status(404).json({ success: false, error: 'Not found' });
+  }
+  try {
+    const stream = await getStorageProvider().getStream(key);
+    const head = await getStorageProvider().head(key);
+    res.setHeader('Content-Type', head?.contentType || 'application/octet-stream');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Disposition', 'attachment');
+    (stream as any).pipe(res);
+  } catch {
+    res.status(404).json({ success: false, error: 'Object not found' });
+  }
+});
+
+// GET /api/media/gc/report — orphan scan, report-only (WP2.7)
+mediaRouter.get('/gc/report', async (req: AuthenticatedRequest, res: Response) => {
+  if (req.user!.role !== 'platform_admin') return res.status(403).json({ success: false, error: 'Admin only' });
+  const report = await orphanReport();
+  res.json({ success: true, ...report, counts: { orphanObjects: report.orphanObjects.length, missingObjects: report.missingObjects.length } });
+});
+
 // Enforce auth on all media routes
 mediaRouter.use(requireAuth);
 
@@ -103,18 +168,17 @@ mediaRouter.get('/', (req: AuthenticatedRequest, res: Response) => {
     return res.status(400).json({ success: false, error: 'Workspace context missing' });
   }
 
-  const catalog = loadMediaCatalog();
-  const workspaceMedia = catalog.filter((m) => m.workspaceId === workspaceId);
+  const catalog = listAssets(workspaceId).map((a) => ({ ...a, url: assetPublicUrl(a) }));
 
   res.json({
     success: true,
-    count: workspaceMedia.length,
-    media: workspaceMedia,
+    count: catalog.length,
+    media: catalog,
   });
 });
 
 // 2. POST /api/media/upload - Upload file with validation
-mediaRouter.post('/upload', (req: AuthenticatedRequest, res: Response) => {
+mediaRouter.post('/upload', async (req: AuthenticatedRequest, res: Response) => {
   const workspaceId = req.workspace?.id;
   const user = req.user!;
 
@@ -208,29 +272,11 @@ mediaRouter.post('/upload', (req: AuthenticatedRequest, res: Response) => {
     }
   }
 
-  // Generate unique safe storage name
-  const ext = path.extname(sanitizedOriginalName) || (mimeType.startsWith('video/') ? '.mp4' : '.png');
-  const storedFilename = `${crypto.randomUUID()}${ext}`;
-  const targetPath = path.join(UPLOADS_DIR, storedFilename);
-
   try {
-    fs.writeFileSync(targetPath, fileBuffer);
-
-    const asset: MediaAsset = {
-      id: `med_${crypto.randomUUID()}`,
-      workspaceId,
-      userId: user.id,
-      filename: storedFilename,
-      originalName: sanitizedOriginalName,
-      mimeType,
-      sizeBytes: actualSize,
-      url: `/uploads/${storedFilename}`,
-      createdAt: new Date().toISOString(),
-    };
-
-    const catalog = loadMediaCatalog();
-    catalog.unshift(asset);
-    saveMediaCatalog(catalog);
+    const asset = await persistAsset({
+      workspaceId, userId: user.id, buffer: fileBuffer,
+      originalName: sanitizedOriginalName, mimeType,
+    });
 
     logAuditEvent({
       workspaceId,
@@ -351,61 +397,37 @@ mediaRouter.post('/chunked/:sid/complete', (req: AuthenticatedRequest, res: Resp
     return res.status(409).json({ success: false, error: `Incomplete upload: ${s.received.length}/${s.totalChunks} chunks received`, received: s.received });
   }
 
-  const storedFilename = `${crypto.randomUUID()}${path.extname(s.filename)}`;
-  const targetPath = path.join(UPLOADS_DIR, storedFilename);
-  const out = fs.createWriteStream(targetPath);
+  // Assemble chunks into a single buffer (sessions stay on disk under .sessions/).
+  const parts: Buffer[] = [];
   for (let i = 0; i < s.totalChunks; i++) {
     const chunkFile = chunkPath(s.id, i);
     if (!fs.existsSync(chunkFile)) {
-      out.destroy();
-      fs.unlinkSync(targetPath);
       return res.status(409).json({ success: false, error: `Missing chunk ${i}` });
     }
-    out.write(fs.readFileSync(chunkFile));
+    parts.push(fs.readFileSync(chunkFile));
   }
-  out.end();
-
-  out.on('finish', () => {
-    const stat = fs.statSync(targetPath);
-    if (stat.size !== s.sizeBytes) {
-      fs.unlinkSync(targetPath);
-      return res.status(422).json({ success: false, error: `Assembled size ${stat.size} does not match declared ${s.sizeBytes}` });
-    }
-    // sniff first 16 bytes for video-type verification
-    const fd = fs.openSync(targetPath, 'r');
-    const head = Buffer.alloc(16);
-    fs.readSync(fd, head, 0, 16, 0);
-    fs.closeSync(fd);
-    if (!sniffVideoType(head)) {
-      fs.unlinkSync(targetPath);
-      deleteSession(s.id);
-      return res.status(400).json({ success: false, error: 'File content does not match a supported video format.' });
-    }
-
-    const asset: MediaAsset = {
-      id: `med_${crypto.randomUUID()}`,
-      workspaceId: s.workspaceId,
-      userId: s.userId,
-      filename: storedFilename,
-      originalName: s.filename,
-      mimeType: s.mimeType,
-      sizeBytes: s.sizeBytes,
-      url: `/uploads/${storedFilename}`,
-      createdAt: new Date().toISOString(),
-    };
-    const catalog = loadMediaCatalog();
-    catalog.unshift(asset);
-    saveMediaCatalog(catalog);
+  const assembled = Buffer.concat(parts);
+  if (assembled.length !== s.sizeBytes) {
+    return res.status(422).json({ success: false, error: `Assembled size ${assembled.length} does not match declared ${s.sizeBytes}` });
+  }
+  const head = assembled.subarray(0, 16);
+  if (!sniffVideoType(head)) {
     deleteSession(s.id);
+    return res.status(400).json({ success: false, error: 'File content does not match a supported video format.' });
+  }
 
+  persistAsset({
+    workspaceId: s.workspaceId, userId: s.userId, buffer: assembled,
+    originalName: s.filename, mimeType: s.mimeType,
+  }).then((asset) => {
+    deleteSession(s.id);
     logAuditEvent({
       workspaceId: s.workspaceId, userId: s.userId, userEmail: s.userEmail,
       action: 'media_uploaded',
       details: `Chunked upload "${s.filename}" (${fmtBytes(s.sizeBytes)})`,
     });
     res.status(201).json({ success: true, asset, message: 'Upload complete' });
-  });
-  out.on('error', () => res.status(500).json({ success: false, error: 'Failed to assemble file' }));
+  }).catch(() => res.status(500).json({ success: false, error: 'Failed to persist media asset' }));
 });
 
 // DELETE /api/media/chunked/:sid — cancel/abandon session
@@ -419,50 +441,55 @@ mediaRouter.delete('/chunked/:sid', (req: AuthenticatedRequest, res: Response) =
   res.json({ success: true, message: 'Upload session cancelled' });
 });
 
-// 3. DELETE /api/media/:id - Remove media asset
-mediaRouter.delete('/:id', (req: AuthenticatedRequest, res: Response) => {
+// 3. DELETE /api/media/:id - soft delete (WP2); refuses while referenced
+mediaRouter.delete('/:id', async (req: AuthenticatedRequest, res: Response) => {
   const workspaceId = req.workspace?.id;
   const user = req.user!;
   const mediaId = req.params.id;
 
-  const catalog = loadMediaCatalog();
-  const assetIndex = catalog.findIndex((m) => m.id === mediaId);
-
-  if (assetIndex === -1) {
+  const asset = getAsset(mediaId);
+  if (!asset) {
     return res.status(404).json({ success: false, error: 'Media asset not found' });
   }
-
-  const asset = catalog[assetIndex];
-
-  // Check tenancy & ownership
   if (asset.workspaceId !== workspaceId && user.role !== 'platform_admin') {
-    return res.status(403).json({ success: false, error: 'Access denied to this media asset' });
+    return res.status(404).json({ success: false, error: 'Media asset not found' }); // 404 not 403 — no existence leak
   }
 
-  // Remove file from disk
-  const targetPath = path.join(UPLOADS_DIR, asset.filename);
-  if (fs.existsSync(targetPath)) {
-    try {
-      fs.unlinkSync(targetPath);
-    } catch (e) {
-      console.warn(`Failed to unlink file ${targetPath}:`, e);
+  // Reference guard: scheduled/published posts and videos may point at this asset.
+  const wsData = getWorkspaceData(workspaceId!);
+  const refs: string[] = [];
+  const needle = asset.storageKey || asset.filename || '';
+  for (const v of (wsData.videos || []) as any[]) {
+    if (v.fileUrl && (v.fileUrl === needle || v.fileUrl === asset.url || v.fileUrl === `/uploads/${asset.filename}`)) refs.push(`video:${v.id}`);
+  }
+  for (const p of (wsData.posts || []) as any[]) {
+    if (p.status === 'scheduled' || p.status === 'publishing') {
+      const s = JSON.stringify(p);
+      if (needle && s.includes(needle)) refs.push(`post:${p.id}`);
     }
   }
+  if (refs.length > 0) {
+    return res.status(409).json({ success: false, error: 'Asset is referenced by scheduled content', references: refs.slice(0, 10) });
+  }
 
-  // Remove from catalog
-  catalog.splice(assetIndex, 1);
-  saveMediaCatalog(catalog);
+  const deleted = softDeleteAsset(mediaId);
+  if (!deleted) return res.status(404).json({ success: false, error: 'Media asset not found' });
+
+  // Best-effort object removal; legacy files under uploads/ kept for WP5 relocation.
+  if (asset.storageKey && !asset.storageKey.startsWith('legacy/')) {
+    try { await getStorageProvider().delete(asset.storageKey); } catch (e) { console.warn('storage delete failed:', e); }
+  } else if (asset.filename) {
+    const legacyPath = path.join(UPLOADS_DIR, asset.filename);
+    try { if (fs.existsSync(legacyPath)) fs.unlinkSync(legacyPath); } catch {}
+  }
 
   logAuditEvent({
     workspaceId: asset.workspaceId,
     userId: user.id,
     userEmail: user.email,
     action: 'media_deleted',
-    details: `Deleted media asset "${asset.originalName}" (${asset.id})`,
+    details: `Soft-deleted media asset "${asset.originalName || asset.filename}" (${asset.id})`,
   });
 
-  res.json({
-    success: true,
-    message: `Asset ${asset.originalName} removed successfully`,
-  });
+  res.json({ success: true, message: `Asset ${asset.originalName || asset.filename} removed successfully` });
 });

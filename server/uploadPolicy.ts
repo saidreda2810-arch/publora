@@ -102,14 +102,13 @@ export function planLimitBytes(plan: string | undefined, policy = getUploadPolic
   return Math.min(effective, policy.globalMaxBytes || effective);
 }
 
-/** Total bytes stored for a workspace according to the media catalog. */
+/** Total bytes stored for a workspace — from media_assets records (WP2). */
 export function workspaceUsageBytes(workspaceId: string): number {
   try {
-    if (!fs.existsSync(CATALOG_FILE)) return 0;
-    const catalog = JSON.parse(fs.readFileSync(CATALOG_FILE, 'utf-8'));
-    return catalog
-      .filter((m: any) => m.workspaceId === workspaceId)
-      .reduce((s: number, m: any) => s + (m.sizeBytes || 0), 0);
+    // Lazy require to avoid a module cycle at import time.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { usageBytes } = require('./mediaAssets.ts');
+    return usageBytes(workspaceId);
   } catch {
     return 0;
   }
@@ -117,9 +116,9 @@ export function workspaceUsageBytes(workspaceId: string): number {
 
 export function workspaceVideoCount(workspaceId: string): number {
   try {
-    if (!fs.existsSync(CATALOG_FILE)) return 0;
-    const catalog = JSON.parse(fs.readFileSync(CATALOG_FILE, 'utf-8'));
-    return catalog.filter((m: any) => m.workspaceId === workspaceId && (m.mimeType || '').startsWith('video/')).length;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { videoCount } = require('./mediaAssets.ts');
+    return videoCount(workspaceId);
   } catch {
     return 0;
   }
