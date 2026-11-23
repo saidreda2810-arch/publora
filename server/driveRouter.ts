@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { requireAuth, AuthenticatedRequest } from './authRouter.ts';
 import { getOAuthConfig, encryptToken, decryptToken, storePendingAttemptAsync, getPendingAttemptAsync, removePendingAttemptAsync, ConnectionAttempt } from './oauthStore.ts';
-import { logAuditEvent } from './saasDb.ts';
+import { authStore } from './authStore.ts';
 
 export const driveRouter = express.Router();
 
@@ -162,7 +162,7 @@ driveRouter.get('/callback', async (req: Request, res: Response) => {
     if (existing >= 0) conns[existing] = conn; else conns.push(conn);
     saveConns(conns);
 
-    logAuditEvent({ workspaceId: wsId, userId, action: 'drive_connected', details: `Google Drive connected: ${conn.email}` });
+    await authStore.logAudit({ workspaceId: wsId, userId, action: 'drive_connected', details: `Google Drive connected: ${conn.email}` });
     res.redirect('/drive?connected=1');
   } catch (e: any) {
     fail(e.message || 'Connection failed.');
@@ -196,7 +196,7 @@ driveRouter.delete('/connections/:id', requireAuth, async (req: AuthenticatedReq
 
   conns.splice(idx, 1);
   saveConns(conns);
-  logAuditEvent({ workspaceId: wsId, userId, action: 'drive_disconnected', details: `Google Drive disconnected: ${conn.email}` });
+  await authStore.logAudit({ workspaceId: wsId, userId, action: 'drive_disconnected', details: `Google Drive disconnected: ${conn.email}` });
   res.json({ success: true, message: 'Google Drive disconnected. Imported videos are preserved.' });
 });
 

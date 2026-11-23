@@ -216,15 +216,20 @@ async function applyMigration(client: any, saas: any, socialConns: any[], mediaC
   // ---- users ----
   for (const u of saas.users || []) {
     const id = await insertReturning('users', [
-      'legacy_id','email','password_hash','full_name','avatar_url','username','phone','bio',
+      'legacy_id','email','password_hash','password_salt','full_name','avatar_url','username','phone','bio',
       'country','city','timezone','language','role','status','is_email_verified','preferences',
+      'pending_email','date_format','time_format','profile_updated_at',
+      'mfa_enabled','mfa_secret','deactivated_at','deactivation_reason','deleted_at','delete_scheduled_at',
       'created_at','updated_at','last_login_at',
     ], [
-      u.id, u.email, u.passwordHash || u.password_hash || null, u.fullName || u.full_name || null,
+      u.id, u.email, u.passwordHash || u.password_hash || null, u.salt || u.password_salt || null, u.fullName || u.full_name || null,
       u.avatarUrl || null, u.username || null, u.phone || null, u.bio || null,
       u.country || null, u.city || null, u.timezone || null, u.language || 'en',
       u.role || 'user', u.status || 'active', !!u.isEmailVerified,
-      j(u.preferences || {}), ts(u.createdAt), ts(u.updatedAt || u.createdAt), ts(u.lastLoginAt),
+      j(u.preferences || {}), u.pendingEmail || null, u.dateFormat || null, u.timeFormat || null,
+      ts(u.profileUpdatedAt), !!u.mfaEnabled, u.mfaSecret || null,
+      ts(u.deactivatedAt), u.deactivationReason || null, ts(u.deletedAt), ts(u.deleteScheduledAt),
+      ts(u.createdAt), ts(u.updatedAt || u.createdAt), ts(u.lastLoginAt),
     ]);
     const real = id || await lookupByLegacy('users', u.id);
     if (real) idMap.set(`users:${u.id}`, real);
@@ -262,9 +267,9 @@ async function applyMigration(client: any, saas: any, socialConns: any[], mediaC
     const ws = await mapId('workspaces', m.workspaceId);
     const usr = await mapId('users', m.userId);
     if (!ws || !usr) continue;
-    await q(`INSERT INTO workspace_members (workspace_id,user_id,role,status,joined_at,created_at)
-             VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (workspace_id,user_id) DO NOTHING`,
-      [ws, usr, m.role || 'editor', m.status || 'active', (ts(m.joinedAt || m.createdAt) || new Date().toISOString()), (ts(m.createdAt || m.joinedAt) || new Date().toISOString())]);
+    await q(`INSERT INTO workspace_members (legacy_id,workspace_id,user_id,role,status,custom_role_id,joined_at,created_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (workspace_id,user_id) DO NOTHING`,
+      [m.id || null, ws, usr, m.role || 'editor', m.status || 'active', m.customRoleId || null, (ts(m.joinedAt || m.createdAt) || new Date().toISOString()), (ts(m.createdAt || m.joinedAt) || new Date().toISOString())]);
   }
   for (const i of saas.workspaceInvitations || []) {
     const ws = await mapId('workspaces', i.workspaceId);
@@ -280,9 +285,9 @@ async function applyMigration(client: any, saas: any, socialConns: any[], mediaC
     const usr = await mapId('users', s.userId);
     if (!usr || !s.token) continue;
     const tokenHash = /^[a-f0-9]{64}$/i.test(s.token) ? s.token : sha256(s.token);
-    await q(`INSERT INTO sessions (user_id,token_hash,ip,user_agent,expires_at,created_at)
-             VALUES ($1,$2,$3::inet,$4,$5,$6) ON CONFLICT (token_hash) DO NOTHING`,
-      [usr, tokenHash, s.ip || null, s.userAgent || null, (ts(s.expiresAt) || new Date().toISOString()), (ts(s.createdAt) || new Date().toISOString())]);
+    await q(`INSERT INTO sessions (legacy_id,user_id,token_hash,ip,user_agent,expires_at,created_at)
+             VALUES ($1,$2,$3,$4::inet,$5,$6,$7) ON CONFLICT (token_hash) DO NOTHING`,
+      [s.id || null, usr, tokenHash, s.ip || null, s.userAgent || null, (ts(s.expiresAt) || new Date().toISOString()), (ts(s.createdAt) || new Date().toISOString())]);
   }
 
   // ---- auth tokens ----

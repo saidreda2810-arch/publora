@@ -7,28 +7,18 @@ import {
   getWorkspaceData,
   saveWorkspaceData,
   getWorkspaceStateVersion,
-  createWorkspace,
-  updateWorkspace,
-  findWorkspaceById,
-  getUserWorkspaces,
-  getWorkspaceMembers,
   getDb,
   saveDatabase,
-  logAuditEvent,
-  updateUser,
-  deleteUser,
   sanitizeUserForClient,
   getSystemSettings,
   updateSystemSettings,
   addAnnouncement,
   removeAnnouncement,
-  getAuditLogs,
   GOD_OWNER_EMAIL,
   ROLE_HIERARCHY,
   UserRole,
   PlanTier,
   BillingCycle,
-  getMemberRole,
   hasWorkspacePermission,
   verifyPassword,
 } from './saasDb.ts';
@@ -39,6 +29,7 @@ import {
   decryptToken,
 } from './oauthStore.ts';
 import { getRepos } from './repos/index.ts';
+import { authStore } from './authStore.ts';
 
 // WP8: /state facade — reads/writes through the repository layer when
 // DB_DRIVER=pg, otherwise the legacy JSON blob (identical response shape).
@@ -277,7 +268,7 @@ saasRouter.post('/queue/pause', async (req: AuthenticatedRequest, res: Response)
     return res.status(409).json({ success: false, needsConfirm: true, activeJobs: status.activeJobs, error: `${status.activeJobs} job(s) currently publishing — pausing will not interrupt them.` });
   }
   await stateSave(workspaceId, { ...(wsData as any), queuePaused: true } as any);
-  logAuditEvent({ workspaceId, userId: req.user!.id, userEmail: req.user!.email, action: 'queue_paused', details: 'Publishing queue paused by user' });
+  await authStore.logAudit({ workspaceId, userId: req.user!.id, userEmail: req.user!.email, action: 'queue_paused', details: 'Publishing queue paused by user' });
   res.json({ success: true, ...queueStatusPayload(await stateGet(workspaceId)), message: 'Queue paused — no new jobs will start. Running jobs continue.' });
 });
 
@@ -286,7 +277,7 @@ saasRouter.post('/queue/resume', async (req: AuthenticatedRequest, res: Response
   if (!workspaceId) return res.status(400).json({ success: false, error: 'No active workspace selected.' });
   const wsData = await stateGet(workspaceId);
   await stateSave(workspaceId, { ...(wsData as any), queuePaused: false } as any);
-  logAuditEvent({ workspaceId, userId: req.user!.id, userEmail: req.user!.email, action: 'queue_resumed', details: 'Publishing queue resumed by user' });
+  await authStore.logAudit({ workspaceId, userId: req.user!.id, userEmail: req.user!.email, action: 'queue_resumed', details: 'Publishing queue resumed by user' });
   res.json({ success: true, ...queueStatusPayload(await stateGet(workspaceId)), message: 'Queue resumed.' });
 });
 
@@ -533,9 +524,9 @@ function brandMemberRole(brand: any, userId: string | undefined): string | null 
 }
 
 // Workspace owner/admin always have full access. Otherwise brand.members governs.
-function canAccessBrand(req: AuthenticatedRequest, brand: any, minRank = 0): { ok: boolean; role: string | null } {
+async function canAccessBrand(req: AuthenticatedRequest, brand: any, minRank = 0): Promise<{ ok: boolean; role: string | null }> {
   const wsId = req.workspace?.id;
-  const wsMemberRole = wsId && req.user?.id ? getMemberRole(req.user.id, wsId) : undefined;
+  const wsMemberRole = wsId && req.user?.id ? await authStore.getMemberRole(req.user.id, wsId) : undefined;
   const memberRole = brandMemberRole(brand, req.user?.id);
   // Workspace owners/admins bypass brand-level restrictions
   if (req.user?.role === 'god' || wsMemberRole === 'owner' || wsMemberRole === 'admin') {
@@ -564,7 +555,7 @@ saasRouter.get('/brands', async (req: AuthenticatedRequest, res: Response) => {
   if (!wsId) return res.status(400).json({ success: false, error: 'Workspace required' });
   const data = await stateGet(wsId);
   // Brand-level access: open brands (no members) visible to all workspace members
-  const brands = (data.brands || []).filter((b: any) => canAccessBrand(req, b, 0).ok);
+  const brands = (await Promise.all((data.brands || []).map(async (b: any) => ((await canAccessBrand(req, b, 0)).ok ? b : null)))).filter(Boolean);
   res.json({ success: true, brands });
 });
 
@@ -602,7 +593,7 @@ saasRouter.patch('/brands/:id', async (req: AuthenticatedRequest, res: Response)
   const brands = data.brands || [];
   const idx = brands.findIndex((b: any) => b.id === req.params.id);
   if (idx === -1) return res.status(404).json({ success: false, error: 'Brand not found' });
-  const access = canAccessBrand(req, brands[idx], 3); // editor rank required to edit
+  const access = await canAccessBrand(req, brands[idx], 3); // editor rank required to edit
   if (!access.ok) return res.status(403).json({ success: false, error: 'Insufficient brand permissions' });
   const mediaViolations = findMediaViolations(req.body, brands[idx]);
   if (mediaViolations.length > 0) {
@@ -613,7 +604,7 @@ saasRouter.patch('/brands/:id', async (req: AuthenticatedRequest, res: Response)
   if (members !== undefined) {
     if (!Array.isArray(members)) return res.status(400).json({ success: false, error: 'members must be an array' });
     const validRoles = ['owner', 'admin', 'editor', 'publisher', 'analyst', 'viewer'];
-    const wsMemberIds = new Set(getWorkspaceMembers(wsId).map((m: any) => m.userId || m.user?.id));
+    const wsMemberIds = new Set(await authStore.getWorkspaceMembers(wsId).map((m: any) => m.userId || m.user?.id));
     for (const m of members) {
       if (!m.userId || !validRoles.includes(m.role)) return res.status(400).json({ success: false, error: 'Invalid member entry' });
       if (!wsMemberIds.has(m.userId)) return res.status(403).json({ success: false, error: `User ${m.userId} is not a workspace member` });
@@ -622,7 +613,7 @@ saasRouter.patch('/brands/:id', async (req: AuthenticatedRequest, res: Response)
   const updated = { ...brands[idx], ...rest, ...(members !== undefined ? { members } : {}), id: brands[idx].id, updatedAt: new Date().toISOString() };
   brands[idx] = updated;
   await stateSave(wsId, { ...data, brands });
-  logAuditEvent({ workspaceId: wsId, userId: req.user!.id, userEmail: req.user!.email, action: 'brand_updated', details: `Brand "${updated.name}" updated${members !== undefined ? ' (members changed)' : ''}` });
+  await authStore.logAudit({ workspaceId: wsId, userId: req.user!.id, userEmail: req.user!.email, action: 'brand_updated', details: `Brand "${updated.name}" updated${members !== undefined ? ' (members changed)' : ''}` });
   res.json({ success: true, brand: updated });
 });
 
@@ -634,7 +625,7 @@ saasRouter.delete('/brands/:id', async (req: AuthenticatedRequest, res: Response
   const brands = data.brands || [];
   const idx = brands.findIndex((b: any) => b.id === req.params.id);
   if (idx === -1) return res.status(404).json({ success: false, error: 'Brand not found' });
-  const delAccess = canAccessBrand(req, brands[idx], 4); // admin rank required to delete
+  const delAccess = await canAccessBrand(req, brands[idx], 4); // admin rank required to delete
   if (!delAccess.ok) return res.status(403).json({ success: false, error: 'Insufficient brand permissions' });
   const deps = brandDependencyCounts(data, req.params.id);
   const totalDeps = Object.values(deps).reduce((a: number, b: any) => a + b, 0);
@@ -649,7 +640,7 @@ saasRouter.delete('/brands/:id', async (req: AuthenticatedRequest, res: Response
   const deletedName = brands[idx].name;
   brands.splice(idx, 1);
   await stateSave(wsId, { ...data, brands });
-  logAuditEvent({ workspaceId: wsId, userId: req.user!.id, userEmail: req.user!.email, action: 'brand_deleted', details: `Brand "${deletedName}" deleted` });
+  await authStore.logAudit({ workspaceId: wsId, userId: req.user!.id, userEmail: req.user!.email, action: 'brand_deleted', details: `Brand "${deletedName}" deleted` });
   res.json({ success: true, message: 'Brand deleted', removedDependencies: deps });
 });
 
@@ -732,10 +723,10 @@ saasRouter.post('/workspace', async (req: AuthenticatedRequest, res: Response) =
     return res.status(400).json({ success: false, error: 'Workspace name is required.' });
   }
 
-  const ws = createWorkspace(user.id, name.trim());
-  const workspaces = getUserWorkspaces(user.id);
+  const ws = await authStore.createWorkspace(user.id, name.trim());
+  const workspaces = await authStore.getUserWorkspaces(user.id);
 
-  logAuditEvent({
+  await authStore.logAudit({
     workspaceId: ws.id,
     userId: user.id,
     userEmail: user.email,
@@ -786,14 +777,14 @@ saasRouter.put('/workspace/:id', async (req: AuthenticatedRequest, res: Response
     if (typeof settings !== 'object' || settings === null || Array.isArray(settings)) {
       return res.status(400).json({ success: false, error: 'Invalid settings payload.' });
     }
-    const current = findWorkspaceById(workspaceId);
+    const current = await authStore.findWorkspaceById(workspaceId);
     updates.settings = { ...current?.settings, ...settings };
   }
   if (Object.keys(updates).length === 0) {
     return res.status(400).json({ success: false, error: 'No valid fields to update.' });
   }
 
-  const updated = updateWorkspace(workspaceId, updates);
+  const updated = await authStore.updateWorkspace(workspaceId, updates);
   res.json({ success: true, workspace: updated });
 });
 
@@ -803,7 +794,7 @@ saasRouter.get('/members', async (req: AuthenticatedRequest, res: Response) => {
   if (!workspaceId) {
     return res.status(400).json({ success: false, error: 'No workspace context.' });
   }
-  const members = getWorkspaceMembers(workspaceId);
+  const members = await authStore.getWorkspaceMembers(workspaceId);
   res.json({ success: true, members });
 });
 
@@ -813,7 +804,7 @@ saasRouter.post('/members/invite', async (req: AuthenticatedRequest, res: Respon
   const { email, role = 'viewer' } = req.body;
 
   // RBAC: only manager+ can invite; cannot invite owner role
-  const inviterRole = getMemberRole(req.user?.id || '', workspaceId);
+  const inviterRole = await authStore.getMemberRole(req.user?.id || '', workspaceId);
   if (!hasWorkspacePermission(inviterRole, 'manage_team')) {
     return res.status(403).json({ success: false, error: 'You do not have permission to invite members.' });
   }
@@ -865,7 +856,7 @@ saasRouter.post('/members/invite', async (req: AuthenticatedRequest, res: Respon
   db.workspaceInvitations = [...(db.workspaceInvitations || []), invitation];
   saveDatabase(db);
 
-  logAuditEvent({
+  await authStore.logAudit({
     workspaceId,
     userId: req.user?.id,
     action: 'member_invited',
@@ -893,9 +884,9 @@ saasRouter.post('/subscription/upgrade', requireGodOwner, async (req: Authentica
     return res.status(400).json({ success: false, error: 'Invalid subscription tier selected.' });
   }
 
-  const updated = updateWorkspace(workspaceId!, { plan, billingCycle });
+  const updated = await authStore.updateWorkspace(workspaceId!, { plan, billingCycle });
 
-  logAuditEvent({
+  await authStore.logAudit({
     workspaceId,
     userId: req.user?.id,
     action: 'subscription_upgraded',
@@ -944,7 +935,7 @@ function getStorageStats() {
 }
 
 // 8. ADMIN & GOD OVERVIEW
-saasRouter.get('/admin/overview', requireRole(['god', 'super_admin', 'platform_admin', 'admin']), (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/admin/overview', requireRole(['god', 'super_admin', 'platform_admin', 'admin']), async (req: AuthenticatedRequest, res: Response) => {
   const db = getDb();
   const caller = req.user!;
   const isGod = caller.role === 'god' && caller.email.toLowerCase() === GOD_OWNER_EMAIL.toLowerCase();
@@ -966,7 +957,7 @@ saasRouter.get('/admin/overview', requireRole(['god', 'super_admin', 'platform_a
     totalAccounts += wsData.accounts?.length || 0;
   });
 
-  const recentLogs = getAuditLogs({ limit: 50 });
+  const recentLogs = await await authStore.getAuditLogs({ limit: 50 });
   const storage = getStorageStats();
   const settings = getSystemSettings();
 
@@ -997,14 +988,14 @@ saasRouter.get('/admin/overview', requireRole(['god', 'super_admin', 'platform_a
 });
 
 // 9. USER LIST (STRICT PRIVACY ENFORCED - ZERO PASSWORDS/HASHES/PRIVATE CONTENT EXPOSED)
-saasRouter.get('/admin/users', requireRole(['god', 'super_admin', 'platform_admin', 'admin', 'support']), (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/admin/users', requireRole(['god', 'super_admin', 'platform_admin', 'admin', 'support']), async (req: AuthenticatedRequest, res: Response) => {
   const db = getDb();
   const caller = req.user!;
 
   // Map only administrative metadata - password hashes, salts, MFA secrets, and private workspaces are strictly omitted
-  const safeUsers = db.users.map((u) => {
+  const safeUsers = await Promise.all(db.users.map(async (u: any) => {
     const sanitized = sanitizeUserForClient(u);
-    const workspaces = getUserWorkspaces(u.id);
+    const workspaces = await authStore.getUserWorkspaces(u.id);
     const isGod = u.email.toLowerCase() === GOD_OWNER_EMAIL.toLowerCase() || u.role === 'god';
 
     return {
@@ -1013,7 +1004,7 @@ saasRouter.get('/admin/users', requireRole(['god', 'super_admin', 'platform_admi
       workspaceCount: workspaces.length,
       primaryWorkspace: workspaces[0]?.name || 'Personal Workspace',
     };
-  });
+  }));
 
   res.json({
     success: true,
@@ -1063,9 +1054,9 @@ saasRouter.put('/admin/users/:id/status', requireGodOwner, async (req: Authentic
     return res.status(400).json({ success: false, error: 'Status must be active or suspended.' });
   }
 
-  const updated = updateUser(targetId, { status });
+  const updated = await authStore.updateUser(targetId, { status });
 
-  logAuditEvent({
+  await authStore.logAudit({
     userId: caller.id,
     userEmail: caller.email,
     action: status === 'suspended' ? 'admin_user_suspended' : 'admin_user_reactivated',
@@ -1129,9 +1120,9 @@ saasRouter.put('/admin/users/:id/role', requireGodOwner, async (req: Authenticat
     });
   }
 
-  const updated = updateUser(targetId, { role });
+  const updated = await authStore.updateUser(targetId, { role });
 
-  logAuditEvent({
+  await authStore.logAudit({
     userId: caller.id,
     userEmail: caller.email,
     action: 'admin_role_changed',
@@ -1152,7 +1143,7 @@ saasRouter.delete('/admin/users/:id/sessions', requireGodOwner, async (req: Auth
   const before = db.sessions.length;
   db.sessions = db.sessions.filter((s) => s.userId !== targetId);
   saveDatabase(db);
-  logAuditEvent({
+  await authStore.logAudit({
     userId: caller.id,
     userEmail: caller.email,
     action: 'admin_sessions_revoked_all',
@@ -1185,12 +1176,12 @@ saasRouter.delete('/admin/users/:id', requireGodOwner, async (req: Authenticated
     return res.status(400).json({ success: false, error: 'You cannot delete your own administrative account via this endpoint.' });
   }
 
-  const result = deleteUser(targetId);
+  const result = await authStore.deleteUser(targetId);
   if (!result.success) {
     return res.status(400).json({ success: false, error: result.error });
   }
 
-  logAuditEvent({
+  await authStore.logAudit({
     userId: caller.id,
     userEmail: caller.email,
     action: 'admin_user_deleted',
@@ -1207,7 +1198,7 @@ saasRouter.get('/admin/system-settings', requireRole(['god', 'super_admin', 'pla
   res.json({ success: true, systemSettings: settings });
 });
 
-saasRouter.put('/admin/system-settings', requireRole(['god', 'super_admin', 'platform_admin']), (req: AuthenticatedRequest, res: Response) => {
+saasRouter.put('/admin/system-settings', requireRole(['god', 'super_admin', 'platform_admin']), async (req: AuthenticatedRequest, res: Response) => {
   const updates = req.body;
   const caller = req.user!;
 
@@ -1218,7 +1209,7 @@ saasRouter.put('/admin/system-settings', requireRole(['god', 'super_admin', 'pla
 
   const updated = updateSystemSettings(updates);
 
-  logAuditEvent({
+  await authStore.logAudit({
     userId: caller.id,
     userEmail: caller.email,
     action: 'system_settings_updated',
@@ -1246,7 +1237,7 @@ saasRouter.post('/admin/announcements', requireGodOwner, async (req: Authenticat
     createdBy: caller.email,
   });
 
-  logAuditEvent({
+  await authStore.logAudit({
     userId: caller.id,
     userEmail: caller.email,
     action: 'announcement_created',
@@ -1266,7 +1257,7 @@ saasRouter.delete('/admin/announcements/:id', requireGodOwner, async (req: Authe
     return res.status(404).json({ success: false, error: 'Announcement not found.' });
   }
 
-  logAuditEvent({
+  await authStore.logAudit({
     userId: caller.id,
     userEmail: caller.email,
     action: 'announcement_deleted',
@@ -1278,7 +1269,7 @@ saasRouter.delete('/admin/announcements/:id', requireGodOwner, async (req: Authe
 });
 
 // 15. ACTIVE SESSION GOVERNANCE
-saasRouter.get('/admin/sessions', requireRole(['god', 'super_admin', 'platform_admin', 'admin']), (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/admin/sessions', requireRole(['god', 'super_admin', 'platform_admin', 'admin']), async (req: AuthenticatedRequest, res: Response) => {
   const db = getDb();
   const sessions = db.sessions.map((s) => {
     const user = db.users.find((u) => u.id === s.userId);
@@ -1297,7 +1288,7 @@ saasRouter.get('/admin/sessions', requireRole(['god', 'super_admin', 'platform_a
   res.json({ success: true, sessions });
 });
 
-saasRouter.delete('/admin/sessions/:id', requireRole(['god', 'super_admin', 'platform_admin']), (req: AuthenticatedRequest, res: Response) => {
+saasRouter.delete('/admin/sessions/:id', requireRole(['god', 'super_admin', 'platform_admin']), async (req: AuthenticatedRequest, res: Response) => {
   const sessionId = req.params.id;
   const caller = req.user!;
   const db = getDb();
@@ -1310,7 +1301,7 @@ saasRouter.delete('/admin/sessions/:id', requireRole(['god', 'super_admin', 'pla
   db.sessions = db.sessions.filter((s) => s.id !== sessionId);
   saveDatabase(db);
 
-  logAuditEvent({
+  await authStore.logAudit({
     userId: caller.id,
     userEmail: caller.email,
     action: 'admin_session_revoked',
@@ -1322,9 +1313,9 @@ saasRouter.delete('/admin/sessions/:id', requireRole(['god', 'super_admin', 'pla
 });
 
 // 16. AUDIT LOGS QUERY
-saasRouter.get('/admin/audit-logs', requireRole(['god', 'super_admin', 'platform_admin', 'admin']), (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/admin/audit-logs', requireRole(['god', 'super_admin', 'platform_admin', 'admin']), async (req: AuthenticatedRequest, res: Response) => {
   const { action, userId, workspaceId, from, to, limit } = req.query;
-  let logs = getAuditLogs({ limit: Math.min(Number(limit) || 200, 1000) });
+  let logs = await authStore.getAuditLogs({ limit: Math.min(Number(limit) || 200, 1000) });
   if (action) logs = logs.filter((l: any) => l.action === action);
   if (userId) logs = logs.filter((l: any) => l.userId === userId);
   if (workspaceId) logs = logs.filter((l: any) => l.workspaceId === workspaceId);
@@ -1336,11 +1327,11 @@ saasRouter.get('/admin/audit-logs', requireRole(['god', 'super_admin', 'platform
 // GOD-only audit export (JSON download)
 saasRouter.get('/admin/audit-logs/export', requireGodOwner, async (req: AuthenticatedRequest, res: Response) => {
   const { action, from, to } = req.query;
-  let logs = getAuditLogs({ limit: 5000 });
+  let logs = await authStore.getAuditLogs({ limit: 5000 });
   if (action) logs = logs.filter((l: any) => l.action === action);
   if (from) logs = logs.filter((l: any) => new Date(l.timestamp) >= new Date(String(from)));
   if (to) logs = logs.filter((l: any) => new Date(l.timestamp) <= new Date(String(to)));
-  logAuditEvent({
+  await authStore.logAudit({
     userId: req.user?.id, userEmail: req.user?.email,
     action: 'audit_log_exported',
     details: `Exported ${logs.length} audit records`,
@@ -1352,7 +1343,7 @@ saasRouter.get('/admin/audit-logs/export', requireGodOwner, async (req: Authenti
 });
 
 // 17. STORAGE METRICS
-saasRouter.get('/admin/storage-metrics', requireRole(['god', 'super_admin', 'platform_admin', 'admin']), (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/admin/storage-metrics', requireRole(['god', 'super_admin', 'platform_admin', 'admin']), async (req: AuthenticatedRequest, res: Response) => {
   const storage = getStorageStats();
   res.json({ success: true, storage });
 });
@@ -1363,14 +1354,14 @@ import {
   listActiveSessions,
 } from './uploadPolicy.ts';
 
-saasRouter.get('/admin/upload-policy', requireRole(['god', 'super_admin', 'platform_admin']), (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/admin/upload-policy', requireRole(['god', 'super_admin', 'platform_admin']), async (req: AuthenticatedRequest, res: Response) => {
   res.json({ success: true, policy: getUploadPolicy() });
 });
 
-saasRouter.put('/admin/upload-policy', requireRole(['god', 'super_admin', 'platform_admin']), (req: AuthenticatedRequest, res: Response) => {
+saasRouter.put('/admin/upload-policy', requireRole(['god', 'super_admin', 'platform_admin']), async (req: AuthenticatedRequest, res: Response) => {
   const result = updateUploadPolicy(req.body || {});
   if (!result.ok) return res.status(400).json({ success: false, error: result.error });
-  logAuditEvent({
+  await authStore.logAudit({
     userId: req.user!.id, userEmail: req.user!.email,
     action: 'upload_policy_updated',
     details: `Upload policy updated by ${req.user!.email}: ${JSON.stringify(req.body)}`,
@@ -1379,7 +1370,7 @@ saasRouter.put('/admin/upload-policy', requireRole(['god', 'super_admin', 'platf
   res.json({ success: true, policy: result.policy });
 });
 
-saasRouter.get('/admin/storage-details', requireRole(['god', 'super_admin', 'platform_admin', 'admin']), (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/admin/storage-details', requireRole(['god', 'super_admin', 'platform_admin', 'admin']), async (req: AuthenticatedRequest, res: Response) => {
   const db = getDb();
   const catalogPath = path.resolve(process.cwd(), 'data', 'media_catalog.json');
   let catalog: any[] = [];
@@ -1469,7 +1460,7 @@ saasRouter.get('/account-overview', async (req: AuthenticatedRequest, res: Respo
   const wsData = workspace ? await stateGet(workspace.id) : null;
   const { accounts: socialAccounts } = await getScopedSocialAccounts(workspace?.id);
 
-  const memberRole = getMemberRole(user.id, workspace?.id);
+  const memberRole = await authStore.getMemberRole(user.id, workspace?.id);
   const memberRecord = workspace
     ? db.workspaceMembers.find((m) => m.workspaceId === workspace.id && m.userId === user.id)
     : undefined;
@@ -1491,7 +1482,7 @@ saasRouter.get('/account-overview', async (req: AuthenticatedRequest, res: Respo
     success: true,
     user: sanitizeUserForClient(user),
     workspace,
-    workspaces: getUserWorkspaces(user.id),
+    workspaces: await authStore.getUserWorkspaces(user.id),
     memberRole: memberRole || null,
     joinedAt: memberRecord?.joinedAt || null,
     workspaceOwner: ownerUser
@@ -1541,7 +1532,7 @@ saasRouter.delete('/social-accounts/:id', async (req: AuthenticatedRequest, res:
 
   removeAccount(accountId);
 
-  logAuditEvent({
+  await authStore.logAudit({
     workspaceId: req.workspace?.id,
     userId: req.user?.id,
     userEmail: req.user?.email,
@@ -1598,7 +1589,7 @@ saasRouter.delete('/account', async (req: AuthenticatedRequest, res: Response) =
     console.warn('OAuth cleanup during account deletion failed:', e);
   }
 
-  const result = deleteUser(user.id);
+  const result = await authStore.deleteUser(user.id);
   if (!result.success) {
     return res.status(400).json({ success: false, error: result.error });
   }
@@ -1818,7 +1809,7 @@ saasRouter.get('/members/invitations', async (req: AuthenticatedRequest, res: Re
 saasRouter.post('/members/invitations/:id/revoke', async (req: AuthenticatedRequest, res: Response) => {
   const workspaceId = req.workspace?.id;
   if (!workspaceId) return res.status(400).json({ success: false, error: 'Workspace required' });
-  const inviterRole = getMemberRole(req.user?.id || '', workspaceId);
+  const inviterRole = await authStore.getMemberRole(req.user?.id || '', workspaceId);
   if (!hasWorkspacePermission(inviterRole, 'manage_team')) return res.status(403).json({ success: false, error: 'No permission' });
   const db = getDb();
   const inv = (db.workspaceInvitations || []).find((i: any) => i.id === req.params.id && i.workspaceId === workspaceId);
@@ -1863,7 +1854,7 @@ saasRouter.post('/members/invitations/accept', async (req: AuthenticatedRequest,
   inv.status = 'accepted';
   inv.acceptedAt = new Date().toISOString();
   saveDatabase(db);
-  logAuditEvent({ workspaceId: inv.workspaceId, userId: user.id, action: 'member_invite_accepted', details: `Accepted invite as ${inv.role}.` });
+  await authStore.logAudit({ workspaceId: inv.workspaceId, userId: user.id, action: 'member_invite_accepted', details: `Accepted invite as ${inv.role}.` });
   res.json({ success: true, workspaceId: inv.workspaceId });
 });
 
@@ -1871,7 +1862,7 @@ saasRouter.post('/members/invitations/accept', async (req: AuthenticatedRequest,
 saasRouter.patch('/members/:id', async (req: AuthenticatedRequest, res: Response) => {
   const workspaceId = req.workspace?.id;
   if (!workspaceId) return res.status(400).json({ success: false, error: 'Workspace required' });
-  const actorRole = getMemberRole(req.user?.id || '', workspaceId);
+  const actorRole = await authStore.getMemberRole(req.user?.id || '', workspaceId);
   if (!hasWorkspacePermission(actorRole, 'manage_team')) return res.status(403).json({ success: false, error: 'No permission to manage members' });
 
   const db = getDb();
@@ -1895,14 +1886,14 @@ saasRouter.patch('/members/:id', async (req: AuthenticatedRequest, res: Response
     member.status = status;
   }
   saveDatabase(db);
-  logAuditEvent({ workspaceId, userId: req.user?.id, action: 'member_updated', details: `Member ${member.userId} updated: ${JSON.stringify({ role, status })}` });
+  await authStore.logAudit({ workspaceId, userId: req.user?.id, action: 'member_updated', details: `Member ${member.userId} updated: ${JSON.stringify({ role, status })}` });
   res.json({ success: true, member });
 });
 
 saasRouter.delete('/members/:id', async (req: AuthenticatedRequest, res: Response) => {
   const workspaceId = req.workspace?.id;
   if (!workspaceId) return res.status(400).json({ success: false, error: 'Workspace required' });
-  const actorRole = getMemberRole(req.user?.id || '', workspaceId);
+  const actorRole = await authStore.getMemberRole(req.user?.id || '', workspaceId);
   if (!hasWorkspacePermission(actorRole, 'manage_team')) return res.status(403).json({ success: false, error: 'No permission to remove members' });
 
   const db = getDb();
@@ -1916,7 +1907,7 @@ saasRouter.delete('/members/:id', async (req: AuthenticatedRequest, res: Respons
   }
   db.workspaceMembers = db.workspaceMembers.filter((m: any) => m.id !== req.params.id);
   saveDatabase(db);
-  logAuditEvent({ workspaceId, userId: req.user?.id, action: 'member_removed', details: `Removed member ${member.userId} (${member.role})` });
+  await authStore.logAudit({ workspaceId, userId: req.user?.id, action: 'member_removed', details: `Removed member ${member.userId} (${member.role})` });
   res.json({ success: true });
 });
 
@@ -1924,7 +1915,7 @@ saasRouter.delete('/members/:id', async (req: AuthenticatedRequest, res: Respons
 saasRouter.post('/workspaces/transfer-ownership', async (req: AuthenticatedRequest, res: Response) => {
   const workspaceId = req.workspace?.id;
   if (!workspaceId) return res.status(400).json({ success: false, error: 'Workspace required' });
-  const actorRole = getMemberRole(req.user?.id || '', workspaceId);
+  const actorRole = await authStore.getMemberRole(req.user?.id || '', workspaceId);
   if (actorRole !== 'owner') return res.status(403).json({ success: false, error: 'Only the owner can transfer ownership' });
 
   const { memberId, confirm } = req.body || {};
@@ -1942,7 +1933,7 @@ saasRouter.post('/workspaces/transfer-ownership', async (req: AuthenticatedReque
   if (currentOwner) currentOwner.role = 'manager';
   target.role = 'owner';
   saveDatabase(db);
-  logAuditEvent({ workspaceId, userId: req.user?.id, action: 'ownership_transferred', details: `Ownership transferred to ${target.userId}` });
+  await authStore.logAudit({ workspaceId, userId: req.user?.id, action: 'ownership_transferred', details: `Ownership transferred to ${target.userId}` });
   res.json({ success: true });
 });
 
@@ -1958,7 +1949,7 @@ saasRouter.get('/roles', async (req: AuthenticatedRequest, res: Response) => {
 saasRouter.post('/roles', async (req: AuthenticatedRequest, res: Response) => {
   const wsId = req.workspace?.id;
   if (!wsId) return res.status(400).json({ success: false, error: 'Workspace required' });
-  const actorRole = getMemberRole(req.user?.id || '', wsId);
+  const actorRole = await authStore.getMemberRole(req.user?.id || '', wsId);
   if (!hasWorkspacePermission(actorRole, 'manage_team')) return res.status(403).json({ success: false, error: 'No permission' });
   const { name, description, baseRole } = req.body || {};
   if (!name || !String(name).trim()) return res.status(400).json({ success: false, error: 'Role name required' });
@@ -1974,7 +1965,7 @@ saasRouter.post('/roles', async (req: AuthenticatedRequest, res: Response) => {
 saasRouter.delete('/roles/:id', async (req: AuthenticatedRequest, res: Response) => {
   const wsId = req.workspace?.id;
   if (!wsId) return res.status(400).json({ success: false, error: 'Workspace required' });
-  const actorRole = getMemberRole(req.user?.id || '', wsId);
+  const actorRole = await authStore.getMemberRole(req.user?.id || '', wsId);
   if (!hasWorkspacePermission(actorRole, 'manage_team')) return res.status(403).json({ success: false, error: 'No permission' });
   const data = await stateGet(wsId);
   const roles = data.customRoles || [];
@@ -1992,10 +1983,10 @@ saasRouter.delete('/roles/:id', async (req: AuthenticatedRequest, res: Response)
 saasRouter.get('/audit-logs', async (req: AuthenticatedRequest, res: Response) => {
   const wsId = req.workspace?.id;
   if (!wsId) return res.status(400).json({ success: false, error: 'Workspace required' });
-  const actorRole = getMemberRole(req.user?.id || '', wsId);
+  const actorRole = await authStore.getMemberRole(req.user?.id || '', wsId);
   if (!hasWorkspacePermission(actorRole, 'view')) return res.status(403).json({ success: false, error: 'No permission' });
   const { action, limit } = req.query;
-  let logs = getAuditLogs({ workspaceId: wsId, limit: Number(limit) || 100 });
+  let logs = await authStore.getAuditLogs({ workspaceId: wsId, limit: Number(limit) || 100 });
   if (action) logs = logs.filter((l: any) => l.action === action);
   res.json({ success: true, logs: logs.slice(0, Math.min(Number(limit) || 100, 500)) });
 });
@@ -2122,14 +2113,14 @@ saasRouter.get('/admin/infrastructure', requireGodOwner, async (req: Authenticat
 saasRouter.post('/admin/scheduler/pause', requireGodOwner, async (req: AuthenticatedRequest, res: Response) => {
   const { setSchedulerPaused, isSchedulerPaused } = await import('./scheduler.ts');
   setSchedulerPaused(true);
-  logAuditEvent({ userId: req.user?.id, userEmail: req.user?.email, action: 'scheduler_paused', details: 'Scheduler paused by Primary Owner', ip: req.socket.remoteAddress });
+  await authStore.logAudit({ userId: req.user?.id, userEmail: req.user?.email, action: 'scheduler_paused', details: 'Scheduler paused by Primary Owner', ip: req.socket.remoteAddress });
   res.json({ success: true, paused: isSchedulerPaused() });
 });
 
 saasRouter.post('/admin/scheduler/resume', requireGodOwner, async (req: AuthenticatedRequest, res: Response) => {
   const { setSchedulerPaused, isSchedulerPaused } = await import('./scheduler.ts');
   setSchedulerPaused(false);
-  logAuditEvent({ userId: req.user?.id, userEmail: req.user?.email, action: 'scheduler_resumed', details: 'Scheduler resumed by Primary Owner', ip: req.socket.remoteAddress });
+  await authStore.logAudit({ userId: req.user?.id, userEmail: req.user?.email, action: 'scheduler_resumed', details: 'Scheduler resumed by Primary Owner', ip: req.socket.remoteAddress });
   res.json({ success: true, paused: isSchedulerPaused() });
 });
 
@@ -2246,7 +2237,7 @@ saasRouter.post('/account/deactivate', requireAuth, async (req: AuthenticatedReq
   // Revoke all sessions
   db.sessions = db.sessions.filter((s) => s.userId !== user.id);
   saveDatabase(db);
-  logAuditEvent({ userId: user.id, userEmail: user.email, action: 'account_self_deactivated', details: `Self-deactivation (${reason || 'user_requested'})` });
+  await authStore.logAudit({ userId: user.id, userEmail: user.email, action: 'account_self_deactivated', details: `Self-deactivation (${reason || 'user_requested'})` });
   res.json({ success: true, message: 'Account deactivated. Contact support to reactivate.' });
 });
 
@@ -2283,7 +2274,7 @@ saasRouter.post('/account/delete-request', requireAuth, async (req: Authenticate
   u.passwordHash = 'deleted';
   u.salt = 'deleted';
   saveDatabase(db);
-  logAuditEvent({ userId: user.id, userEmail: 'deleted', action: 'account_self_deleted', details: 'Account scheduled for deletion (30-day recovery)' });
+  await authStore.logAudit({ userId: user.id, userEmail: 'deleted', action: 'account_self_deleted', details: 'Account scheduled for deletion (30-day recovery)' });
   res.json({ success: true, message: 'Account scheduled for deletion. You have 30 days to contact support for recovery.' });
 });
 
@@ -2334,7 +2325,7 @@ saasRouter.put('/admin/maintenance', requireGodOwner, async (req: AuthenticatedR
     previousConfig: prev,
   };
   const updated = updateSystemSettings({ maintenanceConfig: next, maintenanceMode: next.mode === 'full' || next.mode === 'emergency' });
-  logAuditEvent({
+  await authStore.logAudit({
     userId: req.user?.id, userEmail: req.user?.email,
     action: 'maintenance_config_changed',
     details: `Mode: ${prev?.mode || 'none'} → ${next.mode}; services: ${(next.affectedServices || []).join(',') || 'all'}`,
@@ -2411,7 +2402,7 @@ saasRouter.post('/admin/backups', requireGodOwner, async (req: AuthenticatedRequ
     try { JSON.parse(fs.readFileSync(file, 'utf8')); verified = true; } catch (e: any) { verifyError = e.message; }
     const rec = { id, file: file.split(/[\\/]/).pop(), sizeBytes: size, createdAt: new Date().toISOString(), createdBy: req.user?.id, status: verified ? 'verified' : 'failed', verifyError: verifyError || null };
     saveBackupIndex([...loadBackupIndex(), rec]);
-    logAuditEvent({ userId: req.user?.id, userEmail: req.user?.email, action: 'backup_created', details: `Backup ${id} (${Math.round(size/1024)}KB) ${verified ? 'verified' : 'FAILED verification'}` });
+    await authStore.logAudit({ userId: req.user?.id, userEmail: req.user?.email, action: 'backup_created', details: `Backup ${id} (${Math.round(size/1024)}KB) ${verified ? 'verified' : 'FAILED verification'}` });
     res.json({ success: true, backup: rec });
   } catch (e: any) {
     console.error('[backup] create failed:', e);
@@ -2503,7 +2494,7 @@ saasRouter.post('/admin/maintenance-tasks/:key/run', requireGodOwner, async (req
     const result = await def.run();
     const rec = { id: `task_${Date.now().toString(36)}`, key: req.params.key, title: def.title, status: 'completed', result, initiatedBy: req.user?.id, startedAt, completedAt: new Date().toISOString() };
     saveTasks([...loadTasks(), rec]);
-    logAuditEvent({ userId: req.user?.id, userEmail: req.user?.email, action: 'maintenance_task_run', details: `Task ${def.title} completed` });
+    await authStore.logAudit({ userId: req.user?.id, userEmail: req.user?.email, action: 'maintenance_task_run', details: `Task ${def.title} completed` });
     res.json({ success: true, task: rec });
   } catch (e: any) {
     const rec = { id: `task_${Date.now().toString(36)}`, key: req.params.key, title: def.title, status: 'failed', error: e.message, initiatedBy: req.user?.id, startedAt, completedAt: new Date().toISOString() };
@@ -2517,7 +2508,7 @@ saasRouter.post('/admin/maintenance-tasks/:key/run', requireGodOwner, async (req
 saasRouter.get('/admin/maintenance-history', requireGodOwner, async (req: AuthenticatedRequest, res: Response) => {
   const { action, from, to, limit } = req.query;
   const MAINT_ACTIONS = ['maintenance_config_changed','maintenance_task_run','backup_created','scheduler_paused','scheduler_resumed','god_access_denied','system_settings_updated'];
-  let logs = getAuditLogs({ limit: 1000 }).filter((l: any) => MAINT_ACTIONS.includes(l.action) || (action && l.action === action));
+  let logs = await authStore.getAuditLogs({ limit: 1000 }).filter((l: any) => MAINT_ACTIONS.includes(l.action) || (action && l.action === action));
   if (from) logs = logs.filter((l: any) => new Date(l.timestamp) >= new Date(String(from)));
   if (to) logs = logs.filter((l: any) => new Date(l.timestamp) <= new Date(String(to)));
   res.json({ success: true, history: logs.slice(0, Math.min(Number(limit) || 100, 500)), total: logs.length });
@@ -2549,7 +2540,7 @@ saasRouter.post('/admin/recovery/rollback', requireGodOwner, async (req: Authent
   if (!prev) return res.status(400).json({ success: false, error: 'No previous configuration to restore' });
   const restored = { ...prev, previousConfig: settings.maintenanceConfig };
   updateSystemSettings({ maintenanceConfig: restored, maintenanceMode: restored.mode === 'full' || restored.mode === 'emergency' });
-  logAuditEvent({ userId: req.user?.id, userEmail: req.user?.email, action: 'maintenance_rollback', details: `Restored previous config (mode: ${restored.mode})` });
+  await authStore.logAudit({ userId: req.user?.id, userEmail: req.user?.email, action: 'maintenance_rollback', details: `Restored previous config (mode: ${restored.mode})` });
   res.json({ success: true, maintenance: restored });
 });
 
@@ -2565,6 +2556,6 @@ saasRouter.post('/admin/recovery/full', requireGodOwner, async (req: Authenticat
   });
   const { setSchedulerPaused } = await import('./scheduler.ts');
   setSchedulerPaused(false);
-  logAuditEvent({ userId: req.user?.id, userEmail: req.user?.email, action: 'recovery_completed', details: 'Maintenance disabled + scheduler resumed' });
+  await authStore.logAudit({ userId: req.user?.id, userEmail: req.user?.email, action: 'recovery_completed', details: 'Maintenance disabled + scheduler resumed' });
   res.json({ success: true, message: 'Recovery complete — maintenance disabled, scheduler resumed' });
 });

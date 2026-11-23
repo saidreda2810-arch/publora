@@ -1,4 +1,5 @@
-import { getDb, saveDatabase, logAuditEvent } from './saasDb.ts';
+import { getDb, saveDatabase } from './saasDb.ts';
+import { authStore } from './authStore.ts';
 import { processPost, manualRetry } from './publishEngine.ts';
 import { runAutomationCycle } from './automationEngine.ts';
 
@@ -55,7 +56,7 @@ export async function runSchedulerCycleNow() {
           post.updatedAt = now.toISOString();
           // processPost is async but the engine's platform step is currently
           // synchronous-in-practice; run sequentially per workspace.
-          pending.push(processPost(post, wsData).then((outcome) => {
+          pending.push(processPost(post, wsData).then(async (outcome) => {
             if (outcome === 'published') {
               publishedInThisCycle++;
               publishedPostsCounter++;
@@ -71,13 +72,13 @@ export async function runSchedulerCycleNow() {
               };
               if (!wsData.auditLogs) wsData.auditLogs = [];
               wsData.auditLogs.unshift(auditEntry);
-              logAuditEvent({
+              await authStore.logAudit({
                 workspaceId,
                 action: 'post_published',
                 details: `Engine published post ${post.id} (${post.publishOperationId}).`,
               });
             } else if (outcome === 'failed') {
-              logAuditEvent({
+              await authStore.logAudit({
                 workspaceId,
                 action: 'post_publish_failed',
                 details: `Post ${post.id} failed: ${post.lastPublishError?.message || 'unknown'}`,

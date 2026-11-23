@@ -3,7 +3,8 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { requireAuth, AuthenticatedRequest } from './authRouter.ts';
-import { logAuditEvent, getWorkspaceData } from './saasDb.ts';
+import { getWorkspaceData } from './saasDb.ts';
+import { authStore } from './authStore.ts';
 import { getStorageProvider } from './storage/storageProvider.ts';
 import {
   createAsset, findBySha256, getAsset, listAssets, softDeleteAsset,
@@ -278,7 +279,7 @@ mediaRouter.post('/upload', async (req: AuthenticatedRequest, res: Response) => 
       originalName: sanitizedOriginalName, mimeType,
     });
 
-    logAuditEvent({
+    await authStore.logAudit({
       workspaceId,
       userId: user.id,
       userEmail: user.email,
@@ -419,9 +420,9 @@ mediaRouter.post('/chunked/:sid/complete', (req: AuthenticatedRequest, res: Resp
   persistAsset({
     workspaceId: s.workspaceId, userId: s.userId, buffer: assembled,
     originalName: s.filename, mimeType: s.mimeType,
-  }).then((asset) => {
+  }).then(async (asset) => {
     deleteSession(s.id);
-    logAuditEvent({
+    await authStore.logAudit({
       workspaceId: s.workspaceId, userId: s.userId, userEmail: s.userEmail,
       action: 'media_uploaded',
       details: `Chunked upload "${s.filename}" (${fmtBytes(s.sizeBytes)})`,
@@ -483,7 +484,7 @@ mediaRouter.delete('/:id', async (req: AuthenticatedRequest, res: Response) => {
     try { if (fs.existsSync(legacyPath)) fs.unlinkSync(legacyPath); } catch {}
   }
 
-  logAuditEvent({
+  await authStore.logAudit({
     workspaceId: asset.workspaceId,
     userId: user.id,
     userEmail: user.email,
