@@ -42,12 +42,19 @@ await t('brands CRUD parity json+pg', async()=>{
   const j=createJsonRepos(), g=createPgRepos();
   const {query}=await import('../server/db/client.ts');
   const wid=(await import('../server/saasDb.ts')).getDb().workspaces[0].id;
-  const jb=await j.brands.create(wid,{name:'ParityBrand',status:'active'});
+  const jb=await j.brands.create(wid,{name:'ParityBrand_'+Date.now(),status:'active'});
   assert.ok(await j.brands.findById(wid,jb.id));
   const pgwid=(await query('SELECT legacy_id FROM workspaces WHERE legacy_id IS NOT NULL LIMIT 1')).rows[0].legacy_id;
-  const gb=await g.brands.create(pgwid,{name:'ParityBrandPg',status:'active'});
+  const gb=await g.brands.create(pgwid,{name:'ParityBrandPg_'+Date.now(),status:'active'});
   assert.ok((await g.brands.list(pgwid)).length>=1);
-  assert.ok(await g.brands.update(pgwid,(gb as any).legacy_id||(gb as any).id,{name:'Renamed'}));
+  assert.ok(await g.brands.update(pgwid,(gb as any).legacy_id||(gb as any).id,{name:'Renamed_'+Date.now()}));
+});
+await t('automationWorkflows CRUD pg', async()=>{
+  const g=createPgRepos();
+  const {query}=await import('../server/db/client.ts');
+  const pgwid=(await query('SELECT legacy_id FROM workspaces WHERE legacy_id IS NOT NULL LIMIT 1')).rows[0].legacy_id;
+  const w=await g.automationWorkflows.create(pgwid,{name:'wf_'+Date.now(),trigger:{type:'manual'},steps:[],status:'active'});
+  assert.ok(w); assert.ok((await g.automationWorkflows.list(pgwid)).length>=1);
 });
 await t('posts.targets.claimDue pg SKIP LOCKED', async()=>{
   const g=createPgRepos(); assert.ok(Array.isArray(await g.posts.targets.claimDue('w1',5)));

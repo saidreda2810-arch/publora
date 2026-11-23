@@ -126,7 +126,7 @@ async function wsUuid(workspaceId: string): Promise<string | null> {
 }
 
 /** Generic table-backed entity repo. `map` translates camelCase fields to columns. */
-function pgEntity(table: string, map: Record<string, string>, jsonCol = 'settings'): any {
+function pgEntity(table: string, map: Record<string, string>, jsonCol: string | null = 'settings', hasUpdatedAt = true): any {
   return {
     list: async (workspaceId: string, filter: Record<string, any> = {}) => {
       const ws = await wsUuid(workspaceId); if (!ws) return [];
@@ -141,24 +141,23 @@ function pgEntity(table: string, map: Record<string, string>, jsonCol = 'setting
     create: async (workspaceId: string, data: any) => {
       const ws = await wsUuid(workspaceId); if (!ws) throw new Error('workspace not found');
       const legacyId = data.legacyId || data.id || rid('ent');
-      const cols = ['legacy_id', 'workspace_id', 'status', 'created_at', 'updated_at', jsonCol];
-      const vals: any[] = [legacyId, ws, data.status || 'active', new Date().toISOString(), new Date().toISOString(), JSON.stringify(data)];
-      let sql = `INSERT INTO ${table}(${cols.join(',')}`;
+      const cols = ['legacy_id', 'workspace_id', 'status', 'created_at', ...(hasUpdatedAt ? ['updated_at'] : [])];
+      const vals: any[] = [legacyId, ws, data.status || 'active', new Date().toISOString(), ...(hasUpdatedAt ? [new Date().toISOString()] : [])];
+      if (jsonCol) { cols.push(jsonCol); vals.push(JSON.stringify(data)); }
+      const extraCols: string[] = [];
       for (const [k, col] of Object.entries(map)) {
-        if (data[k] !== undefined) { sql += `,${col}`; vals.push(typeof data[k] === 'object' ? JSON.stringify(data[k]) : data[k]); }
+        if (data[k] !== undefined) { extraCols.push(col); vals.push(typeof data[k] === 'object' ? JSON.stringify(data[k]) : data[k]); }
       }
-      sql += `) VALUES(${cols.map((_, i2) => `$${i2 + 1}`).join(',')}`;
-      let p = cols.length + 1;
-      for (const [k, col] of Object.entries(map)) if (data[k] !== undefined) sql += `,$${p++}`;
-      sql += ') RETURNING *';
+      const allCols = [...cols, ...extraCols];
+      const sql = `INSERT INTO ${table}(${allCols.join(',')}) VALUES(${allCols.map((_, i2) => `$${i2 + 1}`).join(',')}) RETURNING *`;
       return (await query(sql, vals)).rows[0];
     },
     update: async (workspaceId: string, id: string, updates: any) => {
       const ws = await wsUuid(workspaceId); if (!ws) return undefined;
-      const sets: string[] = [`updated_at=now()`]; const vals: any[] = [ws, id]; let i = 3;
+      const sets: string[] = hasUpdatedAt ? [`updated_at=now()`] : []; const vals: any[] = [ws, id]; let i = 3;
       for (const [k, col] of Object.entries(map)) if (updates[k] !== undefined) { sets.push(`${col}=$${i++}`); vals.push(typeof updates[k] === 'object' ? JSON.stringify(updates[k]) : updates[k]); }
       if (updates.status !== undefined) { sets.push(`status=$${i++}`); vals.push(updates.status); }
-      if (Object.keys(updates).length) await query(`UPDATE ${table} SET ${sets.join(',')} WHERE workspace_id=$1 AND (legacy_id=$2 OR id::text=$2)`, vals);
+      if (sets.length) await query(`UPDATE ${table} SET ${sets.join(',')} WHERE workspace_id=$1 AND (legacy_id=$2 OR id::text=$2)`, vals);
       return (await query(`SELECT * FROM ${table} WHERE workspace_id=$1 AND (legacy_id=$2 OR id::text=$2)`, [ws, id])).rows[0];
     },
     remove: async (workspaceId: string, id: string) => {
@@ -175,7 +174,7 @@ function pgEntities() {
     projects: pgEntity('projects', { name: 'name', description: 'description', brandId: 'brand_id' }),
     videos: pgEntity('videos', { title: 'title', description: 'description', brandId: 'brand_id', projectId: 'project_id', durationSec: 'duration_sec', fileSizeBytes: 'file_size_bytes', thumbnailUrl: 'thumbnail_url' }, 'metadata'),
     socialAccounts: pgEntity('social_accounts', { provider: 'provider', platformAccountId: 'platform_account_id', accountName: 'account_name', handle: 'handle', avatarUrl: 'avatar_url' }, 'metadata'),
-    mediaAssets: pgEntity('media_assets', { originalName: 'original_name', mime: 'mime', storageKey: 'storage_key', sha256: 'sha256', sizeBytes: 'size_bytes', kind: 'kind', width: 'width', height: 'height', durationSec: 'duration_sec', brandId: 'brand_id' }),
+    mediaAssets: pgEntity('media_assets', { originalName: 'original_name', mime: 'mime', storageKey: 'storage_key', sha256: 'sha256', sizeBytes: 'size_bytes', kind: 'kind', width: 'width', height: 'height', durationSec: 'duration_sec', brandId: 'brand_id' }, null, false),
     posts: {
       ...pgEntity('posts', { title: 'title', caption: 'caption', brandId: 'brand_id', projectId: 'project_id', videoId: 'video_id', scheduledAt: 'scheduled_at', timezone: 'timezone' }),
       targets: {
@@ -201,6 +200,28 @@ function pgEntities() {
           if (sets.length) await query(`UPDATE post_targets SET ${sets.join(',')},updated_at=now() WHERE id=$1`, vals);
         },
       },
+    },
+    automationWorkflows: pgEntity('automation_workflows', { name: 'name', description: 'description', trigger: 'trigger', steps: 'steps' }, null),
+    analyticsSnapshots: {
+      list: async (workspaceId: string) => { const ws = await wsUuid(workspaceId); return ws ? (await query('SELECT * FROM analytics_snapshots WHERE workspace_id=$1 ORDER BY created_at DESC LIMIT 500', [ws])).rows : []; },
+      findById: async () => undefined,
+      create: async (workspaceId: string, d: any) => { const ws = await wsUuid(workspaceId); if (!ws) throw new Error('workspace not found'); return (await query(`INSERT INTO analytics_snapshots(workspace_id,post_target_id,social_account_id,video_id,metric,value,period_start,period_end,source,synced_at,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,now(),now()) RETURNING *`, [ws, d.postTargetId ?? null, d.socialAccountId ?? null, d.videoId ?? null, d.metric, d.value, d.periodStart ?? null, d.periodEnd ?? null, d.source ?? 'manual'])).rows[0]; },
+      update: async () => undefined,
+      remove: async () => false,
+    },
+    driveConnections: {
+      list: async (workspaceId: string) => { const ws = await wsUuid(workspaceId); return ws ? (await query('SELECT * FROM drive_connections WHERE workspace_id=$1', [ws])).rows : []; },
+      findById: async (workspaceId: string, id: string) => { const ws = await wsUuid(workspaceId); return ws ? (await query('SELECT * FROM drive_connections WHERE workspace_id=$1 AND id::text=$2', [ws, id])).rows[0] : undefined; },
+      create: async (workspaceId: string, d: any) => { const ws = await wsUuid(workspaceId); if (!ws) throw new Error('workspace not found'); return (await query(`INSERT INTO drive_connections(workspace_id,user_id,google_account,encrypted_token,token_expires_at,scopes,status,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,now(),now()) RETURNING *`, [ws, d.userId ?? null, d.googleAccount ?? null, d.encryptedToken ?? null, d.tokenExpiresAt ?? null, JSON.stringify(d.scopes ?? []), d.status || 'active'])).rows[0]; },
+      update: async () => undefined,
+      remove: async (workspaceId: string, id: string) => { const ws = await wsUuid(workspaceId); if (!ws) return false; return ((await query('DELETE FROM drive_connections WHERE workspace_id=$1 AND id::text=$2', [ws, id])).rowCount ?? 0) > 0; },
+    },
+    driveImports: {
+      list: async () => [],
+      findById: async () => undefined,
+      create: async () => { throw new Error('not implemented'); },
+      update: async () => undefined,
+      remove: async () => false,
     },
     notifications: {
       listForUser: async (userId: string, unreadOnly = false) => {

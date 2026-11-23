@@ -83,5 +83,9 @@ export interface SaasRepos {
   socialAccounts: EntityRepo;
   posts: EntityRepo & { targets: PostTargetsRepo };
   notifications: NotificationsRepo;
+  automationWorkflows: EntityRepo;
+  analyticsSnapshots: EntityRepo;
+  driveConnections: EntityRepo;
+  driveImports: EntityRepo;
   driver: 'json' | 'pg';
 }

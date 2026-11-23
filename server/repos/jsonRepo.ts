@@ -113,5 +113,10 @@ function blobEntities() {
       listForUser: async () => [],
       markRead: async () => {},
     },
+    automationWorkflows: entity('automationWorkflows'),
+    analyticsSnapshots: entity('analytics'),
+    // Drive connections live in oauth_config.json outside the workspace blob — stub until WP7.
+    driveConnections: { list: async () => [], findById: async () => undefined, create: async () => { throw new Error('not implemented (json)'); }, update: async () => undefined, remove: async () => false },
+    driveImports: { list: async () => [], findById: async () => undefined, create: async () => { throw new Error('not implemented (json)'); }, update: async () => undefined, remove: async () => false },
   };
 }
