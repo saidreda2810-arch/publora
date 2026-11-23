@@ -430,20 +430,20 @@ async function applyMigration(client: any, saas: any, socialConns: any[], mediaC
 
   // ---- audit / security events ----
   for (const l of saas.auditLogs || []) {
-    await q(`INSERT INTO audit_logs (workspace_id,user_id,user_email,action,details,severity,created_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING`,
+    await q(`INSERT INTO audit_logs (workspace_id,user_id,user_email,action,details,severity,created_at,source_legacy_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING`,
       [l.workspaceId ? await mapId('workspaces', l.workspaceId) : null,
        l.userId ? await mapId('users', l.userId) : null,
-       l.userEmail || null, l.action || 'unknown', l.details || null,
-       l.severity || 'info', (ts(l.timestamp || l.createdAt) || new Date().toISOString()) || new Date().toISOString()]);
+       l.userEmail || null, l.action || 'unknown', j(l.details || null),
+       l.severity || 'info', (ts(l.timestamp || l.createdAt) || new Date().toISOString()), l.id || null]);
   }
   for (const l of saas.securityEvents || []) {
-    await q(`INSERT INTO security_events (workspace_id,user_id,user_email,action,details,severity,created_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING`,
+    await q(`INSERT INTO security_events (workspace_id,user_id,user_email,action,details,severity,created_at,source_legacy_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING`,
       [l.workspaceId ? await mapId('workspaces', l.workspaceId) : null,
        l.userId ? await mapId('users', l.userId) : null,
-       l.userEmail || null, l.action || 'unknown', l.details || null,
-       l.severity || 'medium', (ts(l.timestamp || l.createdAt) || new Date().toISOString()) || new Date().toISOString()]);
+       l.userEmail || null, l.action || 'unknown', j(l.details || null),
+       l.severity || 'medium', (ts(l.timestamp || l.createdAt) || new Date().toISOString()), l.id || null]);
   }
 
   // ---- social_connections.json (if present) ----
