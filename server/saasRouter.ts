@@ -38,6 +38,39 @@ import {
   getOAuthConfig,
   decryptToken,
 } from './oauthStore.ts';
+import { getRepos } from './repos/index.ts';
+
+// WP8: /state facade — reads/writes through the repository layer when
+// DB_DRIVER=pg, otherwise the legacy JSON blob (identical response shape).
+const STATE_DEFAULTS: Record<string, any> = {
+  brands: [], activeBrandId: null, projects: [], accounts: [], categories: [],
+  videos: [], analytics: [], posts: [], recommendations: [], experiments: [],
+  autopilotConfig: null, auditLogs: [], automationWorkflows: [],
+  automationExecutions: [], customRoles: [], campaigns: [], contentPillars: [],
+  contentIdeas: [], postComments: [], calendarSavedViews: [], calendarSettings: null,
+};
+
+async function stateGet(workspaceId: string): Promise<any> {
+  const repos = getRepos();
+  if (repos.driver === 'pg') return { ...STATE_DEFAULTS, ...(await repos.workspaceState.get(workspaceId)) };
+  return getWorkspaceData(workspaceId);
+}
+
+async function stateVersion(workspaceId: string): Promise<number> {
+  const repos = getRepos();
+  if (repos.driver === 'pg') return repos.workspaceState.getVersion(workspaceId);
+  return getWorkspaceStateVersion(workspaceId);
+}
+
+async function stateSave(workspaceId: string, data: any, baseVersion?: number): Promise<boolean> {
+  const repos = getRepos();
+  if (repos.driver === 'pg') {
+    const v = baseVersion ?? (await repos.workspaceState.getVersion(workspaceId));
+    return repos.workspaceState.save(workspaceId, data, v);
+  }
+  saveWorkspaceData(workspaceId, data);
+  return true;
+}
 
 export const saasRouter = express.Router();
 
@@ -45,20 +78,25 @@ export const saasRouter = express.Router();
 saasRouter.use(requireAuth);
 
 // 1. GET WORKSPACE ISOLATED DATA
-saasRouter.get('/state', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/state', async (req: AuthenticatedRequest, res: Response) => {
   const workspaceId = req.workspace?.id;
   if (!workspaceId) {
     return res.status(400).json({ success: false, error: 'No active workspace selected.' });
   }
 
-  const data = getWorkspaceData(workspaceId);
-  res.json({
-    success: true,
-    workspaceId,
-    workspace: req.workspace,
-    data,
-    stateVersion: getWorkspaceStateVersion(workspaceId),
-  });
+  try {
+    const data = await stateGet(workspaceId);
+    res.json({
+      success: true,
+      workspaceId,
+      workspace: req.workspace,
+      data,
+      stateVersion: await stateVersion(workspaceId),
+    });
+  } catch (e) {
+    console.error('[state] GET failed:', e);
+    res.status(500).json({ success: false, error: 'Failed to load workspace state.' });
+  }
 });
 
 // Top-level keys the workspace-state blob is allowed to carry. Anything else
@@ -109,7 +147,7 @@ function findStateReferenceViolations(
 }
 
 // 2. SAVE WORKSPACE ISOLATED DATA
-saasRouter.post('/state', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.post('/state', async (req: AuthenticatedRequest, res: Response) => {
   const workspaceId = req.workspace?.id;
   if (!workspaceId) {
     return res.status(400).json({ success: false, error: 'No active workspace selected.' });
@@ -120,8 +158,14 @@ saasRouter.post('/state', (req: AuthenticatedRequest, res: Response) => {
     return res.status(400).json({ success: false, error: 'Invalid state payload.' });
   }
 
-  const current = getWorkspaceData(workspaceId);
-  const currentVersion = getWorkspaceStateVersion(workspaceId);
+  let current: any, currentVersion: number;
+  try {
+    current = await stateGet(workspaceId);
+    currentVersion = await stateVersion(workspaceId);
+  } catch (e) {
+    console.error('[state] POST preload failed:', e);
+    return res.status(500).json({ success: false, error: 'Failed to load workspace state.' });
+  }
 
   // Optimistic concurrency: when the client declares the version it based its
   // edits on, a mismatch means someone else wrote in between — reject so the
@@ -178,11 +222,24 @@ saasRouter.post('/state', (req: AuthenticatedRequest, res: Response) => {
     });
   }
 
-  saveWorkspaceData(workspaceId, data);
+  try {
+    const saved = await stateSave(workspaceId, data, typeof baseVersion === 'number' ? baseVersion : undefined);
+    if (!saved) {
+      return res.status(409).json({
+        success: false,
+        conflict: true,
+        error: 'Workspace state changed since your last sync. Refreshing…',
+        stateVersion: await stateVersion(workspaceId),
+      });
+    }
+  } catch (e) {
+    console.error('[state] POST save failed:', e);
+    return res.status(500).json({ success: false, error: 'Failed to save workspace state.' });
+  }
   res.json({
     success: true,
     message: 'Workspace state synchronized.',
-    stateVersion: getWorkspaceStateVersion(workspaceId),
+    stateVersion: await stateVersion(workspaceId),
   });
 });
 
