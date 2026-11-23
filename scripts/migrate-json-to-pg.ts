@@ -235,13 +235,24 @@ async function applyMigration(client: any, saas: any, socialConns: any[], mediaC
   for (const w of saas.workspaces || []) {
     const ownerUuid = await mapId('users', w.ownerId);
     if (!ownerUuid) continue; // orphan workspace — reported in dry-run
-    const id = await insertReturning('workspaces', [
+    let id = await insertReturning('workspaces', [
       'legacy_id','name','slug','owner_id','plan','billing_cycle','settings','state_version','created_at','updated_at',
     ], [
       w.id, w.name, w.slug || `ws-${w.id}`, ownerUuid, w.plan || 'free',
       w.billingCycle || 'monthly', j(w.settings || {}),
       (saas.stateVersions || {})[w.id] || 0, (ts(w.createdAt) || new Date().toISOString()), (ts(w.updatedAt || w.createdAt) || new Date().toISOString()),
     ]);
+    // Slug uniqueness: duplicate workspace names/slugs in JSON would silently
+    // orphan the whole workspaceData blob — retry once with a disambiguated slug.
+    if (!id && !(await lookupByLegacy('workspaces', w.id))) {
+      id = await insertReturning('workspaces', [
+        'legacy_id','name','slug','owner_id','plan','billing_cycle','settings','state_version','created_at','updated_at',
+      ], [
+        w.id, w.name, `${w.slug || `ws-${w.id}`}-${String(w.id).slice(-6)}`, ownerUuid, w.plan || 'free',
+        w.billingCycle || 'monthly', j(w.settings || {}),
+        (saas.stateVersions || {})[w.id] || 0, (ts(w.createdAt) || new Date().toISOString()), (ts(w.updatedAt || w.createdAt) || new Date().toISOString()),
+      ]);
+    }
     const real = id || await lookupByLegacy('workspaces', w.id);
     if (real) idMap.set(`workspaces:${w.id}`, real);
   }

@@ -82,9 +82,25 @@ export function createPgRepos(): SaasRepos {
       get: async (workspaceId) => {
         const ws = (await query(`SELECT id FROM workspaces WHERE ${byLegacy('id::text','legacy_id')}`, [workspaceId, workspaceId])).rows[0];
         if (!ws) return {} as any;
-        const rows = (await query('SELECT key,value FROM workspace_kv WHERE workspace_id=$1', [ws.id])).rows;
         const out: any = {};
-        for (const r of rows) out[r.key] = r.value;
+        // 1) leftover keys live in workspace_kv
+        for (const r of (await query('SELECT key,value FROM workspace_kv WHERE workspace_id=$1', [ws.id])).rows) out[r.key] = r.value;
+        // 2) normalized collections reconstructed from their tables.
+        //    settings/metadata JSONB holds the original record (migration contract).
+        const coll = async (sql: string, key: string, mapFn?: (r: any) => any) => {
+          const rows = (await query(sql, [ws.id])).rows;
+          out[key] = rows.map(mapFn || ((r: any) => r.settings ?? r.metadata ?? r));
+        };
+        await coll('SELECT settings FROM brands WHERE workspace_id=$1', 'brands');
+        await coll('SELECT legacy_id,name,description,status,settings,brand_id,created_at,updated_at FROM projects WHERE workspace_id=$1', 'projects',
+          (r: any) => ({ ...(r.settings || {}), id: r.legacy_id, name: r.name, description: r.description, status: r.status, brandId: r.brand_id || undefined, createdAt: r.created_at, updatedAt: r.updated_at }));
+        await coll('SELECT metadata FROM social_accounts WHERE workspace_id=$1', 'accounts');
+        await coll('SELECT metadata FROM videos WHERE workspace_id=$1', 'videos');
+        await coll('SELECT settings FROM posts WHERE workspace_id=$1', 'posts');
+        await coll(`SELECT id,video_id,metric,value,period_start,period_end,source,synced_at FROM analytics_snapshots WHERE workspace_id=$1`, 'analytics',
+          (r: any) => ({ id: r.id, videoId: r.video_id, metric: r.metric, value: r.value, periodStart: r.period_start, periodEnd: r.period_end, source: r.source, syncedAt: r.synced_at }));
+        await coll('SELECT legacy_id,name,description,trigger,steps,status,version,created_by,created_at,updated_at,last_trigger_hash FROM automation_workflows WHERE workspace_id=$1', 'automationWorkflows',
+          (r: any) => ({ id: r.legacy_id, name: r.name, description: r.description, trigger: r.trigger, steps: r.steps, status: r.status, version: r.version, createdBy: r.created_by, createdAt: r.created_at, updatedAt: r.updated_at, lastTriggerHash: r.last_trigger_hash }));
         return out;
       },
       getVersion: async (workspaceId) => Number((await query(`SELECT state_version FROM workspaces WHERE ${byLegacy('id::text','legacy_id')}`, [workspaceId, workspaceId])).rows[0]?.state_version ?? 0),
@@ -93,7 +109,84 @@ export function createPgRepos(): SaasRepos {
         if (!ws) return false;
         const cur = (await c.query('SELECT state_version FROM workspaces WHERE id=$1', [ws.id])).rows[0].state_version;
         if (Number(cur) !== baseVersion) return false;
+
+        const resolveFk = async (table: string, legacy: any) => {
+          if (!legacy) return null;
+          const r = await c.query(`SELECT id FROM ${table} WHERE legacy_id=$1 OR id::text=$1 LIMIT 1`, [legacy]);
+          return r.rows[0]?.id ?? null;
+        };
+        const tsOrNull = (v: any) => (v ? new Date(v).toISOString() : null);
+
+        // Normalized collections: rewrite table contents for keys present in payload.
+        const normalized = ['brands', 'projects', 'accounts', 'videos', 'posts', 'analytics', 'automationWorkflows'] as const;
+        const present = normalized.filter((k) => (data as any)[k] !== undefined);
+
+        if ((data as any).brands !== undefined) {
+          await c.query('DELETE FROM brands WHERE workspace_id=$1', [ws.id]);
+          for (const b of (data as any).brands || []) {
+            await c.query(`INSERT INTO brands(legacy_id,workspace_id,name,description,logo_url,website,status,settings,created_at,updated_at)
+              VALUES($1,$2,$3,$4,$5,$6,$7,$8,now(),now()) ON CONFLICT DO NOTHING`,
+              [b.id || b.legacyId, ws.id, b.name || '', b.description || null, b.logoUrl || null, b.website || null, b.status || 'active', JSON.stringify(b)]);
+          }
+        }
+        if ((data as any).projects !== undefined) {
+          await c.query('DELETE FROM projects WHERE workspace_id=$1', [ws.id]);
+          for (const p of (data as any).projects || []) {
+            await c.query(`INSERT INTO projects(legacy_id,workspace_id,brand_id,name,description,status,settings,created_at,updated_at)
+              VALUES($1,$2,$3,$4,$5,$6,$7,now(),now()) ON CONFLICT DO NOTHING`,
+              [p.id || p.legacyId, ws.id, await resolveFk('brands', p.brandId), p.name || '', p.description || null, p.status || 'active', JSON.stringify(p.settings || {})]);
+          }
+        }
+        if ((data as any).accounts !== undefined) {
+          await c.query('DELETE FROM social_accounts WHERE workspace_id=$1', [ws.id]);
+          for (const a of (data as any).accounts || []) {
+            await c.query(`INSERT INTO social_accounts(legacy_id,workspace_id,brand_id,provider,platform_account_id,account_name,handle,avatar_url,status,metadata,created_at,updated_at)
+              VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now(),now()) ON CONFLICT DO NOTHING`,
+              [a.id || a.legacyId, ws.id, await resolveFk('brands', a.brandId), a.provider || 'unknown', a.externalAccountId || a.id || null, a.accountName || a.name || '', a.usernameOrHandle || a.handle || null, a.avatarUrl || null, a.connectionStatus || a.status || 'disconnected', JSON.stringify(a)]);
+          }
+        }
+        if ((data as any).videos !== undefined) {
+          await c.query('DELETE FROM videos WHERE workspace_id=$1', [ws.id]);
+          for (const v of (data as any).videos || []) {
+            await c.query(`INSERT INTO videos(legacy_id,workspace_id,brand_id,project_id,title,description,status,metadata,created_at,updated_at)
+              VALUES($1,$2,$3,$4,$5,$6,$7,$8,now(),now()) ON CONFLICT DO NOTHING`,
+              [v.id || v.legacyId, ws.id, await resolveFk('brands', v.brandId), await resolveFk('projects', v.projectId), v.title || v.name || '', v.description || null, v.status || 'uploaded', JSON.stringify(v)]);
+          }
+        }
+        if ((data as any).posts !== undefined) {
+          await c.query('DELETE FROM post_targets WHERE workspace_id=$1', [ws.id]);
+          await c.query('DELETE FROM posts WHERE workspace_id=$1', [ws.id]);
+          for (const p of (data as any).posts || []) {
+            const pr = await c.query(`INSERT INTO posts(legacy_id,workspace_id,brand_id,project_id,video_id,title,caption,status,scheduled_at,timezone,settings,created_at,updated_at)
+              VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now(),now()) ON CONFLICT DO NOTHING RETURNING id`,
+              [p.id || p.legacyId, ws.id, await resolveFk('brands', p.brandId), await resolveFk('projects', p.projectId), await resolveFk('videos', p.videoId),
+               p.title || p.postTitle || '', p.caption || null, p.status || 'draft', tsOrNull(p.scheduledTime || p.scheduledAt), p.timezone || null, JSON.stringify(p)]);
+            const postUuid = pr.rows[0]?.id;
+            if (!postUuid) continue;
+            // Expand channel platforms into post_targets (one row per platform).
+            const plats: any[] = p.channelPlatforms || p.platforms || (p.platform ? [p.platform] : []);
+            for (const plat of plats) {
+              const platId = typeof plat === 'string' ? plat : plat?.platform;
+              if (!platId) continue;
+              const accUuid = await resolveFk('social_accounts', (typeof plat === 'object' ? plat?.accountId : null) || p.accounts?.[platId]);
+              await c.query(`INSERT INTO post_targets(legacy_id,post_id,workspace_id,social_account_id,platform,status,scheduled_at,payload,created_at,updated_at)
+                VALUES($1,$2,$3,$4,$5,$6,$7,$8,now(),now()) ON CONFLICT DO NOTHING`,
+                [`${p.id || p.legacyId}_${platId}`, postUuid, ws.id, accUuid, platId, p.status === 'published' ? 'published' : (p.status === 'failed' ? 'failed' : 'scheduled'), tsOrNull(p.scheduledTime || p.scheduledAt), JSON.stringify(p)]);
+            }
+          }
+        }
+        if ((data as any).automationWorkflows !== undefined) {
+          await c.query('DELETE FROM automation_workflows WHERE workspace_id=$1', [ws.id]);
+          for (const w of (data as any).automationWorkflows || []) {
+            await c.query(`INSERT INTO automation_workflows(legacy_id,workspace_id,name,description,trigger,steps,status,created_at,updated_at)
+              VALUES($1,$2,$3,$4,$5,$6,$7,now(),now()) ON CONFLICT DO NOTHING`,
+              [w.id || w.legacyId, ws.id, w.name || '', w.description || null, JSON.stringify(w.trigger || {}), JSON.stringify(w.steps || []), w.status || 'active']);
+          }
+        }
+
+        // Non-normalized keys → workspace_kv (skip normalized + undefined).
         for (const [k, v] of Object.entries(data as any)) {
+          if ((normalized as readonly string[]).includes(k) || v === undefined) continue;
           await c.query(`INSERT INTO workspace_kv(workspace_id,key,value,updated_at) VALUES($1,$2,$3,now())
             ON CONFLICT (workspace_id,key) DO UPDATE SET value=$3,updated_at=now()`, [ws.id, k, JSON.stringify(v)]);
         }
