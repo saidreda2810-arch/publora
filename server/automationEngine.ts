@@ -2,9 +2,25 @@
 // Evaluates active workflows' triggers, executes supported steps for real,
 // records executions persistently. No fabricated results.
 
-import { getDb, saveDatabase, getWorkspaceData, saveWorkspaceData } from './saasDb.ts';
+import { getDb, getWorkspaceData, saveWorkspaceData } from './saasDb.ts';
 import { sharedStateDriver } from './sharedState.ts';
 import { query } from './db/client.ts';
+import { getRepos } from './repos/index.ts';
+
+const isPg = () => process.env.DB_DRIVER === 'pg';
+async function wsGet(wsId: string): Promise<any> {
+  if (!isPg()) return getWorkspaceData(wsId);
+  const r = getRepos();
+  return { ...(await r.workspaceState.get(wsId)) };
+}
+async function wsSave(wsId: string, data: any): Promise<boolean> {
+  if (!isPg()) { saveWorkspaceData(wsId, data); return true; }
+  const r = getRepos();
+  const v = await r.workspaceState.getVersion(wsId);
+  const ok = await r.workspaceState.save(wsId, data, v);
+  if (!ok) console.warn('[automation] workspaceState CAS conflict for', wsId);
+  return ok;
+}
 
 const MAX_STEPS_PER_EXECUTION = 25;
 const MAX_EXECUTION_MS = 5 * 60 * 1000;
@@ -208,7 +224,7 @@ function execStep(step: WorkflowStep, ctx: { wsId: string; wf: Workflow; data: a
 
 async function runWorkflow(wsId: string, wf: Workflow, startIndex = 0, execId?: string) {
   const startedAt = Date.now();
-  const data = getWorkspaceData(wsId);
+  const data = await wsGet(wsId);
   const steps = wf.steps || [];
   const stepResults: any[] = [];
   let status = 'completed';
@@ -277,24 +293,25 @@ async function runWorkflow(wsId: string, wf: Workflow, startIndex = 0, execId?: 
     data.automationWorkflows = workflows;
   }
 
-  saveWorkspaceData(wsId, data);
+  await wsSave(wsId, data);
   // Notify on completion/failure — deduped
   if (status === 'completed') notify(wsId, data, `Workflow "${wf.name}" completed successfully`, wf.id);
   else if (status === 'failed') notify(wsId, data, `Workflow "${wf.name}" failed: ${error || 'unknown error'}`, wf.id);
-  saveWorkspaceData(wsId, data);
+  await wsSave(wsId, data);
 }
 
 // ---------- Public API ----------
 
 export async function runAutomationCycle() {
-  const db = getDb();
-  const workspaceIds = Object.keys(db.workspaceData || {});
+  const workspaceIds = isPg()
+    ? (await query('SELECT legacy_id FROM workspaces')).rows.map((r: any) => r.legacy_id)
+    : Object.keys(getDb().workspaceData || {});
 
   // Resume executions parked on resolved approvals
   const approvals = loadApprovals().filter((a: any) => a.status === 'approved' || a.status === 'rejected');
   for (const ap of approvals.slice(-100)) {
     try {
-      const data = getWorkspaceData(ap.workspaceId);
+      const data = await wsGet(ap.workspaceId);
       const execs = data.automationExecutions || [];
       const exec = execs.find((e: any) => e.id === ap.executionId && e.status === 'waiting_approval');
       if (!exec) continue;
@@ -305,14 +322,14 @@ export async function runAutomationCycle() {
       if (ap.status === 'approved') {
         // Retire the parked record before resuming (new exec reuses same id)
         const pidx = execs.findIndex((e: any) => e.id === exec.id);
-        if (pidx !== -1) { execs[pidx] = { ...execs[pidx], status: 'resumed' }; data.automationExecutions = execs; saveWorkspaceData(ap.workspaceId, data); }
+        if (pidx !== -1) { execs[pidx] = { ...execs[pidx], status: 'resumed' }; data.automationExecutions = execs; await wsSave(ap.workspaceId, data); }
         await runWorkflow(ap.workspaceId, wf, resumeIdx, exec.id);
       } else {
         // Rejected — mark execution cancelled
         const idx = execs.findIndex((e: any) => e.id === exec.id);
         execs[idx] = { ...exec, status: 'cancelled', error: `Approval ${ap.decision || 'rejected'}`, completedAt: new Date().toISOString() };
         data.automationExecutions = execs;
-        saveWorkspaceData(ap.workspaceId, data);
+        await wsSave(ap.workspaceId, data);
       }
       // Mark approval consumed so it doesn't reprocess
       const all = loadApprovals();
@@ -324,7 +341,7 @@ export async function runAutomationCycle() {
   }
 
   for (const wsId of workspaceIds) {
-    const data = getWorkspaceData(wsId);
+    const data = await wsGet(wsId);
     const workflows = (data.automationWorkflows || []).filter(
       (w: any) => w.status === 'active' && w.trigger?.type && w.trigger.type !== 'manual'
     );
@@ -344,7 +361,7 @@ export async function runAutomationCycle() {
             (data.automationWorkflows as any[])[wIdx] = { ...wf, triggerState: { seenFileIds: seenIds } };
           }
         } else if (['video_uploaded', 'post_scheduled', 'post_failed'].includes(t || '')) {
-          const ev = detectWorkspaceEvents(wsId, wf);
+          const ev = await detectWorkspaceEvents(wsId, wf);
           if (ev.found === 0) continue;
         }
         if (await shouldFire(wf, now)) {
@@ -358,7 +375,7 @@ export async function runAutomationCycle() {
 }
 
 export async function runWorkflowNow(wsId: string, workflowId: string): Promise<{ success: boolean; error?: string }> {
-  const data = getWorkspaceData(wsId);
+  const data = await wsGet(wsId);
   const wf = (data.automationWorkflows || []).find((w: any) => w.id === workflowId);
   if (!wf) return { success: false, error: 'Workflow not found' };
   if (wf.status === 'archived') return { success: false, error: 'Cannot run archived workflow' };
@@ -433,8 +450,8 @@ async function detectDriveNewFiles(wsId: string, wf: Workflow): Promise<{ found:
 }
 
 // Workspace event detection — new videos/posts since workflow's last run.
-function detectWorkspaceEvents(wsId: string, wf: Workflow): { found: number; detail: string } {
-  const data = getWorkspaceData(wsId);
+async function detectWorkspaceEvents(wsId: string, wf: Workflow): Promise<{ found: number; detail: string }> {
+  const data = await wsGet(wsId);
   const lastRun = wf.lastExecutionAt ? new Date(wf.lastExecutionAt).getTime() : 0;
   const t = wf.trigger?.type;
   if (t === 'video_uploaded') {
