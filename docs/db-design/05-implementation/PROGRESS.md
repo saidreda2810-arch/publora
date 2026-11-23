@@ -24,6 +24,18 @@
 - S3/MinIO: not deployed — LocalStorageProvider active; S3Provider written but untested
 - Email provider: none — tokens dev-only
 
+## Phase 2 (post-cutover) — status
+
+| Item | Status | Evidence |
+|---|---|---|
+| Platform adapters (YouTube/TikTok/Meta) | ✅ implemented, compile+unit tested — **live publish untested** (needs real OAuth connect) | commit d2fe995; server/platformAdapters/ |
+| Transactional email (SMTP + log fallback) | ✅ implemented — **SMTP delivery untested** (needs SMTP creds) | commit efcf4f2; server/mailer.ts |
+| Remaining file stores → PG (globalStores) | ✅ verified on scratch + seeded on publora | commits 4f6c05c, b375abd, 961d80b |
+| Legacy JSON → gs:* seed | ✅ ran on publora (system_settings, oauth_config, media_assets) | scripts/seed-global-stores.mts |
+
+Phase 2 blocked-on-externals: real platform publish test (OAuth connect),
+SMTP delivery test, S3 provider test (MinIO/R2 endpoint).
+
 ## Known limitations (honest)
 
 - No real platform publishing adapters — `adapter_missing` failures are honest, never fake success
