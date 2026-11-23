@@ -17,6 +17,7 @@ import {
 import { authStore } from './authStore.ts';
 import { bruteForceGuard } from './bruteForceGuard.ts';
 import { findMediaViolations, MEDIA_INGRESS_ERROR_CODE } from './mediaIngress.ts';
+import { sendMail, verificationEmail, passwordResetEmail, emailChangeEmail } from './mailer.ts';
 
 export interface AuthenticatedRequest extends Request {
   user?: User;
@@ -321,6 +322,13 @@ authRouter.post('/register', bruteForceGuard, async (req: Request, res: Response
       fullName,
     });
 
+    // Send verification email (fire-and-forget — never block registration)
+    if (verificationToken) {
+      sendMail({ ...verificationEmail(verificationToken), to: user.email }).catch((e) =>
+        console.warn('[mailer] verification email failed:', e?.message || e)
+      );
+    }
+
     // Create session
     const ip = req.headers['x-forwarded-for'] as string || req.socket.remoteAddress;
     const userAgent = req.headers['user-agent'];
@@ -493,6 +501,11 @@ authRouter.post('/forgot-password', bruteForceGuard, async (req: Request, res: R
     userId: user.id,
     expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(), // 60 minutes
   });
+
+  // Send reset email (fire-and-forget)
+  sendMail({ ...passwordResetEmail(resetToken), to: user.email }).catch((e) =>
+    console.warn('[mailer] password reset email failed:', e?.message || e)
+  );
 
   res.json({
     success: true,
@@ -691,6 +704,10 @@ authRouter.put('/profile', requireAuth, async (req: AuthenticatedRequest, res: R
         expiresAt: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
       });
       emailChangeInitiated = true;
+      // Notify the NEW address — confirmation token goes there
+      sendMail({ ...emailChangeEmail(emailChangeToken, cleanEmail), to: cleanEmail }).catch((e) =>
+        console.warn('[mailer] email-change email failed:', e?.message || e)
+      );
     } else {
       updates.pendingEmail = undefined;
     }
@@ -917,6 +934,14 @@ authRouter.post('/magic-link/send', bruteForceGuard, async (req: Request, res: R
       expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(), // 10 mins
       attempts: 0,
     });
+
+    // Send OTP email (fire-and-forget)
+    sendMail({
+      to: emailKey,
+      subject: 'Your SRA Social Publisher sign-in code',
+      text: `Your sign-in code is: ${otpCode}\n\nIt expires in 10 minutes. If you didn't request this, ignore this email.`,
+      html: `<p>Your sign-in code:</p><p style="font-size:24px;font-weight:bold;letter-spacing:4px">${otpCode}</p><p>It expires in 10 minutes.</p>`,
+    }).catch((e) => console.warn('[mailer] magic-link email failed:', e?.message || e));
 
     res.json({
       success: true,

@@ -634,10 +634,10 @@ async function main() {
     enabled: true,
     accountMaxFailures: 3,
     accountWindowMs: 60_000,
-    accountRestrictMs: 250,
+    accountRestrictMs: 2_000,
     ipMaxFailures: 4,
     ipWindowMs: 60_000,
-    ipRestrictMs: 300,
+    ipRestrictMs: 2_000,
     adminAccountMaxFailures: 2,
     maxRestrictMs: 5_000,
     progressiveDelayBaseMs: 1,
@@ -665,7 +665,7 @@ async function main() {
   });
 
   await runTest('BruteForce', 'Restriction expires and login is allowed again', async () => {
-    await sleep(400); // accountRestrictMs = 250ms
+    await sleep(2_100); // accountRestrictMs = 2000ms
     const v = checkRestricted({ ip: '10.0.0.2', email: bfEmail });
     assert(!v.restricted, 'Restriction must expire after its window');
   });
@@ -717,7 +717,7 @@ async function main() {
     // Force-expire by manipulating via success + immediate re-fail cycle is
     // complex; instead verify cap indirectly: strikes escalate but bounded.
     // Wait out first restriction then re-offend.
-    return sleep(400).then(() => {
+    return sleep(2_100).then(() => {
       for (let i = 0; i < 3; i++) recordAuthFailure({ ip: '10.2.2.2', email: bfEmail });
       const second = checkRestricted({ ip: '10.2.2.2', email: bfEmail });
       assert(second.restricted, 'Second restriction must engage after re-offence');
