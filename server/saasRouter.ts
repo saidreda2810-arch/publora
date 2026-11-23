@@ -293,6 +293,47 @@ saasRouter.post('/queue/resume', async (req: AuthenticatedRequest, res: Response
 });
 
 // Queue analytics — real metrics computed from workspace post records
+// Dead-letter queue — failed posts with error classification, for ops review.
+saasRouter.get('/queue/dead-letter', async (req: AuthenticatedRequest, res: Response) => {
+  const workspaceId = req.workspace?.id;
+  if (!workspaceId) return res.status(400).json({ success: false, error: 'No active workspace selected.' });
+  const wsData = await stateGet(workspaceId);
+  const posts: any[] = Array.isArray(wsData?.posts) ? wsData.posts : [];
+  const items = posts
+    .filter((p) => p.status === 'failed' || (p.retryCount || 0) >= 5)
+    .map((p) => ({
+      id: p.id,
+      title: p.title || 'Untitled post',
+      status: p.status,
+      retryCount: p.retryCount || 0,
+      lastPublishError: p.lastPublishError || null,
+      scheduledTime: p.scheduledTime || null,
+      updatedAt: p.updatedAt || null,
+      channelPlatforms: p.channelPlatforms || p.platforms || [],
+      brandId: p.brandId || null,
+      videoId: p.videoId || null,
+    }))
+    .sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
+  res.json({ success: true, items, total: items.length });
+});
+
+// Server-side retry — uses the engine's manualRetry (resets counters/events)
+// instead of trusting a client-mutated blob.
+saasRouter.post('/queue/retry/:postId', async (req: AuthenticatedRequest, res: Response) => {
+  const workspaceId = req.workspace?.id;
+  if (!workspaceId) return res.status(400).json({ success: false, error: 'No active workspace selected.' });
+  const wsData = await stateGet(workspaceId);
+  const posts: any[] = Array.isArray(wsData?.posts) ? wsData.posts : [];
+  const post = posts.find((p) => p.id === req.params.postId);
+  if (!post) return res.status(404).json({ success: false, error: 'Post not found.' });
+  const { manualRetry } = await import('./publishEngine.ts');
+  if (!manualRetry(post)) {
+    return res.status(409).json({ success: false, error: 'Post is locked or currently publishing — cannot retry.' });
+  }
+  if (!await saveOrConflict(workspaceId, { ...wsData, posts }, res)) return;
+  res.json({ success: true, message: 'Post re-queued for publishing.' });
+});
+
 saasRouter.get('/queue/analytics', async (req: AuthenticatedRequest, res: Response) => {
   const workspaceId = req.workspace?.id;
   if (!workspaceId) return res.status(400).json({ success: false, error: 'No active workspace selected.' });
