@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { sharedStateDriver, pgRateLimit } from './sharedState.ts';
 
 // Sliding window in-memory rate limiter
 interface RateLimitRecord {
@@ -25,13 +26,31 @@ export function createRateLimiter(options: {
   message?: string;
 }) {
   const { windowMs, maxRequests, message = 'Too many requests, please slow down.' } = options;
+  // Deterministic bucket per limiter config so all instances share counters.
+  const pgBucket = `rl_${windowMs}_${maxRequests}`;
 
-  return (req: Request, res: Response, next: NextFunction) => {
+  const usePg = sharedStateDriver() === 'pg';
+
+  return async (req: Request, res: Response, next: NextFunction) => {
     // req.ip honours app.set('trust proxy') — X-Forwarded-For is only trusted
     // when TRUST_PROXY is configured, preventing IP spoofing to evade limits.
     const ip = req.ip || req.socket.remoteAddress || 'unknown-ip';
     const key = `${req.baseUrl || req.path}:${ip}`;
     const now = Date.now();
+
+    if (usePg) {
+      try {
+        // WP6: fixed-window counter shared across instances (Postgres).
+        const verdict = await pgRateLimit(pgBucket, key, windowMs, maxRequests);
+        if (!verdict.allowed) {
+          res.setHeader('Retry-After', verdict.retryAfterSec);
+          return res.status(429).json({ success: false, error: message, retryAfterSeconds: verdict.retryAfterSec });
+        }
+        return next();
+      } catch (e) {
+        console.error('[rate-limit] pg backend failed, falling back to memory:', e);
+      }
+    }
 
     let record = rateLimitStore.get(key);
     if (!record) {

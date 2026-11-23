@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { Request, Response, NextFunction } from 'express';
 import { findUserByEmail, logAuditEvent } from './saasDb.ts';
+import { sharedStateDriver, pgBfGet, pgBfDelete, pgBfRecordFailure } from './sharedState.ts';
 
 // ============================================================================
 // Brute-Force / Credential-Stuffing Protection Guard
@@ -300,6 +301,70 @@ export function recordAuthSuccess(identity: GuardIdentity) {
 // Express middleware
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Postgres-backed path (WP6) — used when SHARED_STATE_DRIVER=pg.
+// Mirrors the in-memory semantics exactly; all counters shared across instances.
+// ---------------------------------------------------------------------------
+
+async function pgCheckRestricted(identity: GuardIdentity) {
+  const now = Date.now();
+  const ipRec = await pgBfGet('ip', identity.ip || 'unknown');
+  if (ipRec.restrictedUntil > now) {
+    return { restricted: true, retryAfterSeconds: Math.ceil((ipRec.restrictedUntil - now) / 1000), scope: 'ip' as const };
+  }
+  if (identity.email) {
+    const acctRec = await pgBfGet('acct', hashIdentity(identity.email));
+    if (acctRec.restrictedUntil > now) {
+      return { restricted: true, retryAfterSeconds: Math.ceil((acctRec.restrictedUntil - now) / 1000), scope: 'account' as const };
+    }
+  }
+  return { restricted: false, retryAfterSeconds: 0, scope: null };
+}
+
+async function pgFailureCount(identity: GuardIdentity) {
+  const ip = await pgBfGet('ip', identity.ip || 'unknown');
+  const acct = identity.email ? await pgBfGet('acct', hashIdentity(identity.email)) : undefined;
+  return { ip: ip.failures, account: acct?.failures ?? 0 };
+}
+
+async function pgRecordAuthFailure(identity: GuardIdentity) {
+  const now = Date.now();
+  const ip = identity.ip || 'unknown';
+  const ipOutcome = await pgBfRecordFailure('ip', ip, config.ipWindowMs, config.ipMaxFailures, config.ipRestrictMs, config.maxRestrictMs, now);
+  if (ipOutcome.restricted) {
+    auditSecurityEvent('brute_force_ip_restricted', 'IP temporarily restricted after repeated failed authentications.', ip);
+    console.warn(`[security] brute-force(pg): IP restricted for ${Math.ceil((ipOutcome.restrictUntil - now) / 1000)}s`);
+  }
+  if (identity.email) {
+    const privileged = isPrivilegedEmail(identity.email);
+    const maxFailures = privileged ? config.adminAccountMaxFailures : config.accountMaxFailures;
+    const acctOutcome = await pgBfRecordFailure('acct', hashIdentity(identity.email), config.accountWindowMs, maxFailures, config.accountRestrictMs, config.maxRestrictMs, now);
+    if (acctOutcome.restricted) {
+      auditSecurityEvent('brute_force_account_restricted', `Account temporarily restricted after repeated failed authentications${privileged ? ' (privileged role — stricter policy)' : ''}.`, ip, identity.email);
+      console.warn(`[security] brute-force(pg): account restricted for ${Math.ceil((acctOutcome.restrictUntil - now) / 1000)}s`);
+    }
+  }
+}
+
+async function pgRecordAuthSuccess(identity: GuardIdentity) {
+  const now = Date.now();
+  if (identity.email) {
+    const acctKey = hashIdentity(identity.email);
+    const acctRec = await pgBfGet('acct', acctKey);
+    if (acctRec.failures >= config.progressiveDelayAfterFailures) {
+      auditSecurityEvent('login_success_after_failures', 'Successful authentication after repeated prior failures.', identity.ip, identity.email);
+    }
+    await pgBfDelete('acct', acctKey);
+  }
+  const ipRec = await pgBfGet('ip', identity.ip || 'unknown');
+  if (ipRec.failures > 0) {
+    ipRec.failures = Math.max(0, ipRec.failures - 1);
+    ipRec.lastFailureAt = now;
+    const { pgBfPut } = await import('./sharedState.ts');
+    await pgBfPut('ip', identity.ip || 'unknown', ipRec);
+  }
+}
+
 const GENERIC_BLOCK_MESSAGE = 'Too many failed sign-in attempts. Please wait a few minutes and try again.';
 
 function clientIp(req: Request): string {
@@ -325,11 +390,13 @@ function requestEmail(req: Request): string | undefined {
 // needed at each call site.
 export function bruteForceGuard(req: Request, res: Response, next: NextFunction) {
   if (!config.enabled) return next();
+  const usePg = sharedStateDriver() === 'pg';
 
+  const run = async () => {
   try {
     const identity: GuardIdentity = { ip: clientIp(req), email: requestEmail(req) };
 
-    const verdict = checkRestricted(identity);
+    const verdict = usePg ? await pgCheckRestricted(identity) : checkRestricted(identity);
     if (verdict.restricted) {
       res.setHeader('Retry-After', String(verdict.retryAfterSeconds));
       auditSecurityEvent('brute_force_blocked', `Blocked authentication attempt during active restriction (${verdict.scope}).`, identity.ip, identity.email);
@@ -341,7 +408,7 @@ export function bruteForceGuard(req: Request, res: Response, next: NextFunction)
     }
 
     // Progressive delay: slow down repeat offenders before they reach the cap
-    const counts = failureCount(identity);
+    const counts = usePg ? await pgFailureCount(identity) : failureCount(identity);
     const recentFailures = Math.max(counts.ip, counts.account);
     let delayMs = 0;
     if (recentFailures >= config.progressiveDelayAfterFailures) {
@@ -357,9 +424,11 @@ export function bruteForceGuard(req: Request, res: Response, next: NextFunction)
       try {
         const status = res.statusCode;
         if (status === 401 || status === 403) {
-          recordAuthFailure(identity);
+          if (usePg) void pgRecordAuthFailure(identity).catch((e) => console.error('[brute-force-guard] pg failure record failed:', e));
+          else recordAuthFailure(identity);
         } else if (status >= 200 && status < 300 && body && body.success === true) {
-          recordAuthSuccess(identity);
+          if (usePg) void pgRecordAuthSuccess(identity).catch((e) => console.error('[brute-force-guard] pg success record failed:', e));
+          else recordAuthSuccess(identity);
         }
       } catch (e) {
         console.error('[brute-force-guard] outcome classification failed:', e);
@@ -380,6 +449,15 @@ export function bruteForceGuard(req: Request, res: Response, next: NextFunction)
     }
     next();
   }
+  };
+  run().catch((e) => {
+    console.error('[brute-force-guard] middleware failure:', e);
+    if (config.failMode === 'closed') {
+      res.status(503).json({ success: false, error: 'Authentication temporarily unavailable. Please try again shortly.' });
+      return;
+    }
+    next();
+  });
 }
 
 // Test helper — clears all in-memory guard state.

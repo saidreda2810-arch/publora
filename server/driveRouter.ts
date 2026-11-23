@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { requireAuth, AuthenticatedRequest } from './authRouter.ts';
-import { getOAuthConfig, encryptToken, decryptToken, storePendingAttempt, getPendingAttempt, removePendingAttempt, ConnectionAttempt } from './oauthStore.ts';
+import { getOAuthConfig, encryptToken, decryptToken, storePendingAttemptAsync, getPendingAttemptAsync, removePendingAttemptAsync, ConnectionAttempt } from './oauthStore.ts';
 import { logAuditEvent } from './saasDb.ts';
 
 export const driveRouter = express.Router();
@@ -51,7 +51,7 @@ function getBaseUrl(req: Request): string {
 
 // 1. Start OAuth — requires auth + workspace
 // Select Brand step removed: Drive connection is per-user; brand chosen at import time.
-driveRouter.post('/authorize-url', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+driveRouter.post('/authorize-url', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const config = getOAuthConfig();
   if (!config.googleClientId || !config.googleClientSecret) {
     return res.status(503).json({ success: false, error: 'Google OAuth is not configured. Contact your administrator.' });
@@ -83,7 +83,7 @@ driveRouter.post('/authorize-url', requireAuth, (req: AuthenticatedRequest, res:
     include_granted_scopes: 'true',
   });
 
-  storePendingAttempt({
+  await storePendingAttemptAsync({
     id: `att_drive_${Date.now()}`,
     provider: 'youtube', // reuse attempt store; provider field unused for drive flow
     brandId: 'drive',
@@ -105,9 +105,9 @@ driveRouter.get('/callback', async (req: Request, res: Response) => {
   if (oauthError) return fail(oauthError === 'access_denied' ? 'Authorization was cancelled.' : oauthError);
   if (!code || !state) return fail('Missing authorization code or state.');
 
-  const attempt = getPendingAttempt(state);
+  const attempt = await getPendingAttemptAsync(state);
   if (!attempt) return fail('Invalid or expired state session. Please try connecting again.');
-  removePendingAttempt(state);
+  await removePendingAttemptAsync(state);
 
   const config = getOAuthConfig();
   const redirectUri = attempt.redirectUri || `${getBaseUrl(req)}/api/drive/callback`;

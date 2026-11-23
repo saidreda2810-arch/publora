@@ -227,3 +227,38 @@ export function getPendingAttempt(state: string): ConnectionAttempt | undefined 
 export function removePendingAttempt(state: string): void {
   pendingAttempts.delete(state);
 }
+
+// ---------------------------------------------------------------------------
+// WP6: async variants backed by Postgres when SHARED_STATE_DRIVER=pg.
+// PG failures degrade to the in-memory map (logged) so auth flows never break.
+// ---------------------------------------------------------------------------
+import { sharedStateDriver, pgStoreAttempt, pgGetAttempt, pgRemoveAttempt } from './sharedState.ts';
+
+function toPgAttempt(a: ConnectionAttempt) {
+  return {
+    id: a.id, provider: a.provider, state: a.state, brandId: a.brandId,
+    workspaceId: a.workspaceId, codeVerifier: a.codeVerifier, redirectUri: a.redirectUri,
+    createdAt: a.createdAt, expiresAt: a.createdAt + 30 * 60 * 1000,
+  };
+}
+
+export async function storePendingAttemptAsync(attempt: ConnectionAttempt): Promise<void> {
+  if (sharedStateDriver() !== 'pg') return storePendingAttempt(attempt);
+  try { await pgStoreAttempt(toPgAttempt(attempt)); }
+  catch (e) { console.error('[oauth] pg attempt store failed, memory fallback:', e); storePendingAttempt(attempt); }
+}
+
+export async function getPendingAttemptAsync(state: string): Promise<ConnectionAttempt | undefined> {
+  if (sharedStateDriver() !== 'pg') return getPendingAttempt(state);
+  try {
+    const a = await pgGetAttempt(state);
+    if (!a) return undefined;
+    return { id: a.id, provider: a.provider as SocialProvider, brandId: a.brandId || '', workspaceId: a.workspaceId, state: a.state, codeVerifier: a.codeVerifier, redirectUri: a.redirectUri, createdAt: a.createdAt };
+  } catch (e) { console.error('[oauth] pg attempt read failed, memory fallback:', e); return getPendingAttempt(state); }
+}
+
+export async function removePendingAttemptAsync(state: string): Promise<void> {
+  if (sharedStateDriver() !== 'pg') return removePendingAttempt(state);
+  try { await pgRemoveAttempt(state); } catch (e) { console.error('[oauth] pg attempt delete failed:', e); }
+  removePendingAttempt(state);
+}

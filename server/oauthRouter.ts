@@ -12,9 +12,9 @@ import {
   getAccountById,
   upsertAccount,
   removeAccount,
-  storePendingAttempt,
-  getPendingAttempt,
-  removePendingAttempt,
+  storePendingAttemptAsync,
+  getPendingAttemptAsync,
+  removePendingAttemptAsync,
   encryptToken,
   decryptToken,
 } from './oauthStore.ts';
@@ -231,7 +231,7 @@ function sha256(buffer: Buffer): Buffer {
 }
 
 // 3. Initiate OAuth Flow: Generate Platform Authorize URL
-oauthRouter.post('/authorize-url', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+oauthRouter.post('/authorize-url', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const { provider, brandId } = req.body as { provider: SocialProvider; brandId: string };
 
   if (!provider || !['youtube', 'facebook', 'instagram', 'tiktok'].includes(provider)) {
@@ -400,7 +400,7 @@ oauthRouter.post('/authorize-url', requireAuth, (req: AuthenticatedRequest, res:
   audit(req, 'oauth_authorize_started', `OAuth flow initiated for ${provider} on brand ${brandId}.`);
 
   // Store connection attempt for CSRF validation during callback
-  storePendingAttempt({
+  await storePendingAttemptAsync({
     id: `att_${Date.now()}`,
     provider,
     brandId,
@@ -540,7 +540,7 @@ oauthRouter.get(['/callback/:provider', '/callback/:provider/'], async (req: Req
   }
 
   // Validate state
-  const attempt = getPendingAttempt(state as string);
+  const attempt = await getPendingAttemptAsync(state as string);
   if (!attempt) {
     return res.status(400).send(
       renderCallbackHtml(
@@ -552,7 +552,7 @@ oauthRouter.get(['/callback/:provider', '/callback/:provider/'], async (req: Req
     );
   }
 
-  removePendingAttempt(state as string);
+  await removePendingAttemptAsync(state as string);
 
   const config = getOAuthConfig();
   const baseUrl = getBaseUrl(req);
