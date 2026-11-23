@@ -82,6 +82,8 @@ export interface UserPreferences {
   defaultLanding?: string;
   sidebarCollapsed?: boolean;
   notifications?: Partial<UserNotificationPreferences>;
+  /** Social sign-in identities: provider → provider subject id */
+  oauthIdentities?: Record<string, string>;
 }
 
 export interface User {

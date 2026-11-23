@@ -365,6 +365,37 @@ export const SignInModal: React.FC<SignInModalProps> = ({
           </div>
         )}
 
+        {/* Social sign-in — full-page OAuth redirect flow */}
+        <div className="mt-5">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="h-px flex-1 bg-[var(--border-color)]" />
+            <span className="text-[10px] font-mono uppercase tracking-wider text-[var(--text-muted)]">Or continue with</span>
+            <div className="h-px flex-1 bg-[var(--border-color)]" />
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {([
+              { p: 'google', label: 'Google', icon: (
+                <svg viewBox="0 0 24 24" className="w-4 h-4" aria-hidden="true"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15A11 11 0 0 0 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/></svg>
+              )},
+              { p: 'facebook', label: 'Facebook', icon: (
+                <svg viewBox="0 0 24 24" className="w-4 h-4" fill="#1877F2" aria-hidden="true"><path d="M24 12a12 12 0 1 0-13.88 11.85v-8.38H7.08V12h3.04V9.36c0-3 1.79-4.67 4.53-4.67 1.31 0 2.68.24 2.68.24v2.95h-1.51c-1.49 0-1.95.93-1.95 1.87V12h3.32l-.53 3.47h-2.79v8.38A12 12 0 0 0 24 12z"/></svg>
+              )},
+              { p: 'tiktok', label: 'TikTok', icon: (
+                <svg viewBox="0 0 24 24" className="w-4 h-4" fill="currentColor" aria-hidden="true"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5 20.1a6.34 6.34 0 0 0 10.86-4.43v-7a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1-.1z"/></svg>
+              )},
+            ] as const).map(({ p, label, icon }) => (
+              <a
+                key={p}
+                href={`/api/auth/oauth/${p}/start`}
+                className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-[#161c26] border border-[var(--border-color)] text-xs font-semibold text-[var(--text-primary)] hover:border-[#00D6B2]/50 hover:bg-[var(--bg-surface-hover)] transition-all"
+              >
+                {icon}
+                <span>{label}</span>
+              </a>
+            ))}
+          </div>
+        </div>
+
         {/* Footer link to sign up */}
         <div className="mt-4 text-center text-xs text-[var(--text-secondary)]">
           New to SRA Publisher?{' '}

@@ -132,6 +132,18 @@ const json = {
     const u = (d.users || []).find((x: any) => x.username && x.username.toLowerCase() === username.toLowerCase());
     return u as User | undefined;
   },
+  findUserByOAuthIdentity: (provider: string, sub: string) => {
+    const d = db.getDb();
+    const u = (d.users || []).find((x: any) => x.preferences?.oauthIdentities?.[provider] === sub);
+    return (u as User) || undefined;
+  },
+  linkOAuthIdentity: (userId: string, provider: string, sub: string) => {
+    const d = db.getDb();
+    const u = (d.users || []).find((x: any) => x.id === userId);
+    if (!u) return;
+    u.preferences = { ...(u.preferences || {}), oauthIdentities: { ...(u.preferences?.oauthIdentities || {}), [provider]: sub } };
+    db.saveDatabase(d);
+  },
   updateUser: (id: string, updates: Partial<User>) => db.updateUser(id, updates),
   deleteUser: (id: string) => db.deleteUser(id),
   registerUser: (input: { email: string; password: string; fullName: string }) => db.createUser(input),
@@ -342,6 +354,22 @@ const pg = {
   },
   async findUserByUsername(username: string) {
     return mapUser((await query(`SELECT ${USER_COLS} FROM users WHERE lower(username)=lower($1)`, [username])).rows[0]);
+  },
+  async findUserByOAuthIdentity(provider: string, sub: string) {
+    return mapUser((await query(
+      `SELECT ${USER_COLS} FROM users WHERE preferences->'oauthIdentities'->>$1 = $2`,
+      [provider, sub],
+    )).rows[0]);
+  },
+  async linkOAuthIdentity(userId: string, provider: string, sub: string) {
+    // provider is a fixed whitelist value ('google'|'facebook'|'tiktok') — safe to interpolate into jsonb path
+    if (!/^[a-z_]+$/.test(provider)) return;
+    const u = (await query(`SELECT id FROM users WHERE ${LEGACY('id::text')} OR id::text=$3`, [userId, userId, userId])).rows[0];
+    if (!u) return;
+    await query(
+      `UPDATE users SET preferences = jsonb_set(COALESCE(preferences,'{}'::jsonb), $1::text[], to_jsonb($2::text)), updated_at=now() WHERE id=$3`,
+      [`{oauthIdentities,${provider}}`, sub, u.id],
+    );
   },
   async updateUser(id: string, updates: Partial<User>) {
     const target = await pg.findUserById(id);

@@ -1018,3 +1018,96 @@ authRouter.post('/magic-link/verify', bruteForceGuard, async (req: Request, res:
   }
 });
 
+
+// ==========================================================================
+// Social sign-in (authentication) — Google / Facebook / TikTok.
+// Distinct from publishing OAuth: proves identity only, no platform tokens.
+// ==========================================================================
+import {
+  isSocialLoginProvider, isProviderConfigured, buildLoginAuthorizeUrl,
+  exchangeLoginCode, newLoginState, type SocialLoginProvider,
+} from './socialAuth.ts';
+import { storePendingAttemptAsync, getPendingAttemptAsync, removePendingAttemptAsync } from './oauthStore.ts';
+
+function loginBaseUrl(req: Request): string {
+  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, '');
+  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+  const host = req.headers['x-forwarded-host'] || req.get('host') || 'localhost:3000';
+  return `${proto}://${host}`;
+}
+
+// GET /api/auth/oauth/:provider/start — redirect to provider consent
+for (const p of ['google', 'facebook', 'tiktok'] as SocialLoginProvider[]) {
+  authRouter.get(`/oauth/${p}/start`, async (req: Request, res: Response) => {
+    if (!isProviderConfigured(p)) {
+      return res.status(503).json({ success: false, error: `${p} sign-in is not configured on this server.` });
+    }
+    const base = loginBaseUrl(req);
+    const redirectUri = `${base}/api/auth/oauth/${p}/callback`;
+    const state = newLoginState();
+    await storePendingAttemptAsync({
+      id: `slogin_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
+      provider: `${p}_login` as any,
+      brandId: '',
+      state,
+      redirectUri,
+      createdAt: Date.now(),
+    } as any);
+    res.redirect(buildLoginAuthorizeUrl(p, redirectUri, state));
+  });
+
+  // GET /api/auth/oauth/:provider/callback — exchange code, provision/login, set session cookie
+  authRouter.get(`/oauth/${p}/callback`, async (req: Request, res: Response) => {
+    const fail = (msg: string) => res.redirect(`${loginBaseUrl(req)}/?auth_error=${encodeURIComponent(msg)}`);
+    try {
+      const { code, state, error: oauthError } = req.query as Record<string, string>;
+      if (oauthError) return fail(`Provider denied access: ${oauthError}`);
+      if (!code || !state) return fail('Missing OAuth code or state.');
+
+      const attempt = await getPendingAttemptAsync(state);
+      if (!attempt) return fail('Login session expired — please try again.');
+      await removePendingAttemptAsync(state);
+      if ((attempt.provider as string) !== `${p}_login`) return fail('State/provider mismatch.');
+
+      const profile = await exchangeLoginCode(p, code, attempt.redirectUri);
+
+      // Resolve existing user: provider identity first, then email.
+      let user = await authStore.findUserByOAuthIdentity(p, profile.id);
+      if (!user && profile.email) user = await authStore.findUserByEmail(profile.email);
+
+      if (!user) {
+        const email = profile.email || `${p}_${profile.id}@oauth.publora.local`;
+        user = await authStore.createMagicUser({
+          email,
+          fullName: profile.name || email.split('@')[0],
+        });
+        if (profile.avatarUrl) {
+          await authStore.updateUser(user.id, { avatarUrl: profile.avatarUrl } as any);
+          user = (await authStore.findUserById(user.id)) || user;
+        }
+      }
+
+      if (user.status === 'suspended' || user.status === 'deleted') {
+        return fail('This account is not active.');
+      }
+
+      await authStore.linkOAuthIdentity(user.id, p, profile.id);
+      await authStore.updateUser(user.id, { lastLoginAt: new Date().toISOString() });
+
+      const ip = req.headers['x-forwarded-for'] as string || req.socket.remoteAddress;
+      const session = await authStore.createSession(user.id, { ip, userAgent: req.headers['user-agent'] });
+      setSessionCookie(res, session.token);
+
+      const workspaces = await authStore.getUserWorkspaces(user.id);
+      await authStore.logAudit({
+        userId: user.id, userEmail: user.email, workspaceId: workspaces[0]?.id,
+        action: 'user_oauth_login', details: `Signed in via ${p} (${profile.id}).`,
+      });
+
+      res.redirect(`${loginBaseUrl(req)}/`);
+    } catch (e: any) {
+      console.error(`[social-auth] ${p} callback failed:`, e?.message || e);
+      fail(e?.message || 'Social sign-in failed.');
+    }
+  });
+}
