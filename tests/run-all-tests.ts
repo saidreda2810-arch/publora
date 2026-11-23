@@ -238,8 +238,8 @@ async function main() {
   // =========================================================================
   console.log('\n--- Suite 4: Autonomous Background Publishing Scheduler ---');
 
-  await runTest('Scheduler', 'Reports active scheduler state and cycle metadata', () => {
-    const status = getSchedulerStatus();
+  await runTest('Scheduler', 'Reports active scheduler state and cycle metadata', async () => {
+    const status = await getSchedulerStatus();
     assert(status !== null, 'Scheduler status must be retrievable');
     assert(typeof status.publishedPostsCounter === 'number', 'Scheduler published count must be numeric');
   });

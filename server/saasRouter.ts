@@ -2337,7 +2337,7 @@ saasRouter.put('/admin/maintenance', requireGodOwner, async (req: AuthenticatedR
 // ---- Background Operations monitor (GOD-only) ----
 saasRouter.get('/admin/background-ops', requireGodOwner, async (req: AuthenticatedRequest, res: Response) => {
   const { getSchedulerStatus, isSchedulerPaused } = await import('./scheduler.ts');
-  const sched = getSchedulerStatus();
+  const sched = await getSchedulerStatus();
   const db = getDb();
 
   // Aggregate post/job states across all workspaces
@@ -2461,7 +2461,7 @@ const TASK_DEFS: Record<string, { title: string; desc: string; run: () => Promis
     desc: 'Report scheduler heartbeat and pause state',
     run: async () => {
       const { getSchedulerStatus, isSchedulerPaused } = await import('./scheduler.ts');
-      return { ok: true, ...getSchedulerStatus(), paused: isSchedulerPaused() };
+      return { ok: true, ...(await getSchedulerStatus()), paused: isSchedulerPaused() };
     },
   },
   oauth_config_check: {
@@ -2524,7 +2524,7 @@ saasRouter.get('/admin/recovery', requireGodOwner, async (req: AuthenticatedRequ
       currentConfig: settings.maintenanceConfig || { mode: 'normal' },
       previousConfig: settings.maintenanceConfig?.previousConfig || null,
       hasRollback: !!settings.maintenanceConfig?.previousConfig,
-      scheduler: { ...getSchedulerStatus(), paused: isSchedulerPaused() },
+      scheduler: { ...(await getSchedulerStatus()), paused: isSchedulerPaused() },
       backups: loadBackupIndex().slice(-5).reverse(),
       generatedAt: new Date().toISOString(),
     },
