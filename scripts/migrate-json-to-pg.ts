@@ -240,7 +240,7 @@ async function applyMigration(client: any, saas: any, socialConns: any[], mediaC
     ], [
       w.id, w.name, w.slug || `ws-${w.id}`, ownerUuid, w.plan || 'free',
       w.billingCycle || 'monthly', j(w.settings || {}),
-      (saas.stateVersions || {})[w.id] || 0, ts(w.createdAt), ts(w.updatedAt || w.createdAt),
+      (saas.stateVersions || {})[w.id] || 0, (ts(w.createdAt) || new Date().toISOString()), (ts(w.updatedAt || w.createdAt) || new Date().toISOString()),
     ]);
     const real = id || await lookupByLegacy('workspaces', w.id);
     if (real) idMap.set(`workspaces:${w.id}`, real);
@@ -253,7 +253,7 @@ async function applyMigration(client: any, saas: any, socialConns: any[], mediaC
     if (!ws || !usr) continue;
     await q(`INSERT INTO workspace_members (workspace_id,user_id,role,status,joined_at,created_at)
              VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (workspace_id,user_id) DO NOTHING`,
-      [ws, usr, m.role || 'editor', m.status || 'active', ts(m.joinedAt || m.createdAt), ts(m.createdAt || m.joinedAt)]);
+      [ws, usr, m.role || 'editor', m.status || 'active', (ts(m.joinedAt || m.createdAt) || new Date().toISOString()), (ts(m.createdAt || m.joinedAt) || new Date().toISOString())]);
   }
   for (const i of saas.workspaceInvitations || []) {
     const ws = await mapId('workspaces', i.workspaceId);
@@ -271,7 +271,7 @@ async function applyMigration(client: any, saas: any, socialConns: any[], mediaC
     const tokenHash = /^[a-f0-9]{64}$/i.test(s.token) ? s.token : sha256(s.token);
     await q(`INSERT INTO sessions (user_id,token_hash,ip,user_agent,expires_at,created_at)
              VALUES ($1,$2,$3::inet,$4,$5,$6) ON CONFLICT (token_hash) DO NOTHING`,
-      [usr, tokenHash, s.ip || null, s.userAgent || null, ts(s.expiresAt), ts(s.createdAt)]);
+      [usr, tokenHash, s.ip || null, s.userAgent || null, (ts(s.expiresAt) || new Date().toISOString()), (ts(s.createdAt) || new Date().toISOString())]);
   }
 
   // ---- auth tokens ----
@@ -305,7 +305,7 @@ async function applyMigration(client: any, saas: any, socialConns: any[], mediaC
       const id = await insertReturning('brands', [
         'legacy_id','workspace_id','name','description','logo_url','website','status','settings','created_at','updated_at',
       ], [b.id, ws, b.name, b.description || null, b.logoUrl || b.logo_url || null, b.website || null,
-          b.status === 'archived' ? 'archived' : 'active', j(b.settings || b || {}), ts(b.createdAt), ts(b.updatedAt || b.createdAt)]);
+          b.status === 'archived' ? 'archived' : 'active', j(b.settings || b || {}), (ts(b.createdAt) || new Date().toISOString()), (ts(b.updatedAt || b.createdAt) || new Date().toISOString())]);
       const real = id || await lookupByLegacy('brands', b.id);
       if (real) brandUuid.set(b.id, real);
     }
@@ -317,7 +317,7 @@ async function applyMigration(client: any, saas: any, socialConns: any[], mediaC
       const bid = pr.brandId ? brandUuid.get(pr.brandId) || await mapId('brands', pr.brandId) : null;
       const id = await insertReturning('projects', [
         'legacy_id','workspace_id','brand_id','name','description','status','settings','created_at','updated_at',
-      ], [pr.id, ws, bid, pr.name, pr.description || null, pr.status || 'active', j(pr.settings || {}), ts(pr.createdAt), ts(pr.updatedAt || pr.createdAt)]);
+      ], [pr.id, ws, bid, pr.name, pr.description || null, pr.status || 'active', j(pr.settings || {}), (ts(pr.createdAt) || new Date().toISOString()), (ts(pr.updatedAt || pr.createdAt) || new Date().toISOString())]);
       const real = id || await lookupByLegacy('projects', pr.id);
       if (real) projectUuid.set(pr.id, real);
     }
@@ -330,7 +330,7 @@ async function applyMigration(client: any, saas: any, socialConns: any[], mediaC
       ], [
         v.id, ws, bid, pid, v.title || 'Untitled', v.description || null, v.durationSec ?? null,
         v.width || null, v.height || null, v.fileSizeBytes || null, v.thumbnailUrl || null,
-        Array.isArray(v.tags) ? v.tags : [], v.status || 'uploaded', j(v), ts(v.createdAt), ts(v.updatedAt || v.createdAt),
+        Array.isArray(v.tags) ? v.tags : [], v.status || 'uploaded', j(v), (ts(v.createdAt) || new Date().toISOString()), (ts(v.updatedAt || v.createdAt) || new Date().toISOString()),
       ]);
       const real = id || await lookupByLegacy('videos', v.id);
       if (real) videoUuid.set(v.id, real);
@@ -348,7 +348,7 @@ async function applyMigration(client: any, saas: any, socialConns: any[], mediaC
         acc.encryptedToken || acc.encrypted_token || acc.accessToken || null,
         Array.isArray(acc.scopes) ? acc.scopes : [],
         acc.status === 'expired' || acc.status === 'revoked' || acc.status === 'needs_reconnect' ? acc.status : 'connected',
-        ts(acc.tokenExpiresAt || acc.expiresAt), j(acc), ts(acc.createdAt), ts(acc.updatedAt || acc.createdAt),
+        ts(acc.tokenExpiresAt || acc.expiresAt), j(acc), (ts(acc.createdAt) || new Date().toISOString()), (ts(acc.updatedAt || acc.createdAt) || new Date().toISOString()),
       ]);
       const real = id || await lookupByLegacy('social_accounts', acc.id);
       if (real) accountUuid.set(acc.id, real);
@@ -366,7 +366,7 @@ async function applyMigration(client: any, saas: any, socialConns: any[], mediaC
       ], [
         p.id, ws, bid, pid, vid, p.title || null, p.caption || null, status,
         ts(p.scheduledTime || p.scheduledAt), ts(p.publishedTime || p.publishedAt),
-        p.version || 1, j(p), ts(p.createdAt), ts(p.updatedAt || p.createdAt),
+        p.version || 1, j(p), (ts(p.createdAt) || new Date().toISOString()), (ts(p.updatedAt || p.createdAt) || new Date().toISOString()),
       ]);
       const realPost = postId || await lookupByLegacy('posts', p.id);
       if (!realPost) continue;
@@ -385,7 +385,7 @@ async function applyMigration(client: any, saas: any, socialConns: any[], mediaC
           [realPost, ws, accUuid, acc.platform, TARGET_STATUSES.has(p.status) ? p.status : 'scheduled',
            ts(p.scheduledTime || p.scheduledAt) || new Date().toISOString(), p.retryCount || 0,
            j({ externalId: p.platformPostId, externalUrl: p.postUrl, publishOperationId: p.publishOperationId }),
-           ts(p.createdAt), ts(p.updatedAt || p.createdAt)]);
+           (ts(p.createdAt) || new Date().toISOString()), (ts(p.updatedAt || p.createdAt) || new Date().toISOString())]);
       }
       // publishingEvents → post_events (best-effort, target-less events skipped)
     }
@@ -403,7 +403,7 @@ async function applyMigration(client: any, saas: any, socialConns: any[], mediaC
         if (value === undefined || value === null) continue;
         await q(`INSERT INTO analytics_snapshots (workspace_id,video_id,metric,value,source,synced_at,created_at)
                  VALUES ($1,$2,$3,$4,'sync',$5,$5)`,
-          [ws, vid, metric, value, ts(an.syncedAt || an.createdAt) || new Date().toISOString()]);
+          [ws, vid, metric, value, (ts(an.syncedAt || an.createdAt) || new Date().toISOString()) || new Date().toISOString()]);
       }
     }
 
@@ -413,7 +413,7 @@ async function applyMigration(client: any, saas: any, socialConns: any[], mediaC
                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING`,
         [wf.id, ws, wf.name || 'Workflow', wf.description || null, j(wf.trigger || {}),
          j(wf.steps || wf.actions || []), wf.status === 'paused' ? 'paused' : wf.status === 'active' ? 'active' : 'draft',
-         ts(wf.createdAt), ts(wf.updatedAt || wf.createdAt)]);
+         (ts(wf.createdAt) || new Date().toISOString()), (ts(wf.updatedAt || wf.createdAt) || new Date().toISOString())]);
     }
 
     // remaining collections → workspace_kv (temporary until T1.4)
@@ -435,7 +435,7 @@ async function applyMigration(client: any, saas: any, socialConns: any[], mediaC
       [l.workspaceId ? await mapId('workspaces', l.workspaceId) : null,
        l.userId ? await mapId('users', l.userId) : null,
        l.userEmail || null, l.action || 'unknown', l.details || null,
-       l.severity || 'info', ts(l.timestamp || l.createdAt) || new Date().toISOString()]);
+       l.severity || 'info', (ts(l.timestamp || l.createdAt) || new Date().toISOString()) || new Date().toISOString()]);
   }
   for (const l of saas.securityEvents || []) {
     await q(`INSERT INTO security_events (workspace_id,user_id,user_email,action,details,severity,created_at)
@@ -443,7 +443,7 @@ async function applyMigration(client: any, saas: any, socialConns: any[], mediaC
       [l.workspaceId ? await mapId('workspaces', l.workspaceId) : null,
        l.userId ? await mapId('users', l.userId) : null,
        l.userEmail || null, l.action || 'unknown', l.details || null,
-       l.severity || 'medium', ts(l.timestamp || l.createdAt) || new Date().toISOString()]);
+       l.severity || 'medium', (ts(l.timestamp || l.createdAt) || new Date().toISOString()) || new Date().toISOString()]);
   }
 
   // ---- social_connections.json (if present) ----
@@ -457,7 +457,7 @@ async function applyMigration(client: any, saas: any, socialConns: any[], mediaC
       [c.id, ws, prov, c.platformAccountId || c.accountId || c.id, c.accountName || c.name || null,
        c.handle || null, c.encryptedToken || c.encrypted_token || c.accessToken || null,
        Array.isArray(c.scopes) ? c.scopes : [], c.status || 'connected', j(c),
-       ts(c.createdAt), ts(c.updatedAt || c.createdAt)]);
+       (ts(c.createdAt) || new Date().toISOString()), (ts(c.updatedAt || c.createdAt) || new Date().toISOString())]);
   }
 
   // ---- media_catalog.json ----
@@ -469,7 +469,7 @@ async function applyMigration(client: any, saas: any, socialConns: any[], mediaC
       [m.id, ws, m.storageKey || m.fileUrl || m.id, m.fileName || m.name || null,
        m.mime || m.format || 'application/octet-stream', m.sizeBytes || m.fileSizeBytes || 0,
        m.sha256 || null, m.kind || 'video', m.width || null, m.height || null,
-       m.status || 'ready', ts(m.createdAt) || new Date().toISOString()]);
+       m.status || 'ready', (ts(m.createdAt) || new Date().toISOString()) || new Date().toISOString()]);
   }
 }
 
