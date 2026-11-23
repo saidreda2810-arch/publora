@@ -1453,25 +1453,23 @@ function oauthProviderStatus() {
 saasRouter.get('/account-overview', async (req: AuthenticatedRequest, res: Response) => {
   const user = req.user!;
   const workspace = req.workspace;
-  const db = getDb();
-
   const wsData = workspace ? await stateGet(workspace.id) : null;
   const { accounts: socialAccounts } = await getScopedSocialAccounts(workspace?.id);
 
   const memberRole = await authStore.getMemberRole(user.id, workspace?.id);
   const memberRecord = workspace
-    ? db.workspaceMembers.find((m) => m.workspaceId === workspace.id && m.userId === user.id)
+    ? (await authStore.listWorkspaceMemberRecords(workspace.id)).find((m: any) => m.userId === user.id)
     : undefined;
 
-  const ownerUser = workspace ? db.users.find((u) => u.id === workspace.ownerId) : undefined;
+  const ownerUser = workspace?.ownerId ? await authStore.findUserById(workspace.ownerId) : undefined;
 
   const videosCount = wsData?.videos?.length || 0;
   const scheduledPostsCount = (wsData?.posts || []).filter((p: any) => p.status === 'scheduled').length;
   const connectedAccountsCount = socialAccounts.filter(
     (a: any) => a.connectionStatus === 'connected' || a.connectionStatus === 'permission_incomplete'
   ).length;
-  const activeSessionsCount = db.sessions.filter(
-    (s) => s.userId === user.id && new Date(s.expiresAt) > new Date()
+  const activeSessionsCount = (await authStore.listSessions()).filter(
+    (s: any) => s.userId === user.id && new Date(s.expiresAt) > new Date()
   ).length;
 
   const storage = getStorageStats();
@@ -1563,10 +1561,9 @@ saasRouter.delete('/account', async (req: AuthenticatedRequest, res: Response) =
 
   // Clean up OAuth connections belonging to this user's owned workspaces
   try {
-    const db = getDb();
-    const ownedWorkspaceIds = db.workspaceMembers
-      .filter((m) => m.userId === user.id && m.role === 'owner')
-      .map((m) => m.workspaceId);
+    const ownedWorkspaceIds = (await authStore.listUserMemberships(user.id))
+      .filter((m: any) => m.role === 'owner')
+      .map((m: any) => m.workspaceId);
     const brandIds = new Set<string>();
     for (const wsId of ownedWorkspaceIds) {
       const wsData = await stateGet(wsId);
@@ -1957,8 +1954,7 @@ saasRouter.delete('/roles/:id', async (req: AuthenticatedRequest, res: Response)
   const idx = roles.findIndex((r: any) => r.id === req.params.id);
   if (idx === -1) return res.status(404).json({ success: false, error: 'Role not found' });
   // Check if assigned to any member
-  const db = getDb();
-  const inUse = db.workspaceMembers.some((m: any) => m.workspaceId === wsId && (m as any).customRoleId === req.params.id);
+  const inUse = (await authStore.listWorkspaceMemberRecords(wsId)).some((m: any) => (m as any).customRoleId === req.params.id);
   if (inUse) return res.status(400).json({ success: false, error: 'Role is assigned to members — reassign first' });
   data.customRoles = roles.filter((_: any, i: number) => i !== idx);
   await stateSave(wsId, data);
@@ -1978,39 +1974,40 @@ saasRouter.get('/audit-logs', async (req: AuthenticatedRequest, res: Response) =
 
 // ---- Security Center overview (GOD-only) ----
 saasRouter.get('/admin/security/overview', requireGodOwner, async (req: AuthenticatedRequest, res: Response) => {
-  const db = getDb();
   const now = Date.now();
-  const activeSessions = db.sessions.filter((s) => new Date(s.expiresAt).getTime() > now);
-  const users = db.users;
-  const mfaEnabled = users.filter((u) => u.mfaEnabled).length;
-  const suspended = users.filter((u) => u.status === 'suspended').length;
-  const unverified = users.filter((u) => !u.isEmailVerified).length;
+  const allSessions = await authStore.listSessions();
+  const activeSessions = allSessions.filter((s: any) => new Date(s.expiresAt).getTime() > now);
+  const users = await authStore.listUsers();
+  const mfaEnabled = users.filter((u: any) => u.mfaEnabled).length;
+  const suspended = users.filter((u: any) => u.status === 'suspended').length;
+  const unverified = users.filter((u: any) => !u.isEmailVerified).length;
 
   // Threat signals from audit log (real recorded events only)
   const threatActions = ['login_failed', 'auth_failure', 'god_access_denied', 'account_locked', 'suspicious_login'];
-  const threatEvents = db.auditLogs.filter((l) => threatActions.includes(l.action));
-  const recentThreats = threatEvents.slice(0, 50).map((l) => ({
+  const auditLogs = await authStore.getAuditLogs({ limit: 5000 });
+  const threatEvents = auditLogs.filter((l: any) => threatActions.includes(l.action));
+  const recentThreats = threatEvents.slice(0, 50).map((l: any) => ({
     id: l.id, action: l.action, userEmail: l.userEmail, timestamp: l.timestamp,
     details: l.details, ip: l.ip,
   }));
 
   // Session stats
   const sessionsByUser = new Map<string, number>();
-  activeSessions.forEach((s) => sessionsByUser.set(s.userId, (sessionsByUser.get(s.userId) || 0) + 1));
+  activeSessions.forEach((s: any) => sessionsByUser.set(s.userId, (sessionsByUser.get(s.userId) || 0) + 1));
   const multiSessionUsers = [...sessionsByUser.entries()].filter(([, c]) => c > 3).length;
 
   res.json({
     success: true,
     security: {
       sessions: {
-        total: db.sessions.length,
+        total: allSessions.length,
         active: activeSessions.length,
-        expired: db.sessions.length - activeSessions.length,
+        expired: allSessions.length - activeSessions.length,
         usersWithMultipleSessions: multiSessionUsers,
       },
       accounts: {
         total: users.length,
-        active: users.filter((u) => u.status === 'active').length,
+        active: users.filter((u: any) => u.status === 'active').length,
         suspended,
         unverifiedEmail: unverified,
         mfaEnabled,
@@ -2018,7 +2015,7 @@ saasRouter.get('/admin/security/overview', requireGodOwner, async (req: Authenti
       },
       threats: {
         totalEvents: threatEvents.length,
-        last24h: threatEvents.filter((l) => now - new Date(l.timestamp).getTime() < 86400000).length,
+        last24h: threatEvents.filter((l: any) => now - new Date(l.timestamp).getTime() < 86400000).length,
         recent: recentThreats,
       },
       policies: {
@@ -2112,7 +2109,6 @@ saasRouter.post('/admin/scheduler/resume', requireGodOwner, async (req: Authenti
 // ---- Privacy Shield: verifiable control report (GOD-only) ----
 // Each control reports REAL implementation status — no universal "active" claim.
 saasRouter.get('/admin/privacy-shield', requireGodOwner, async (req: AuthenticatedRequest, res: Response) => {
-  const db = getDb();
   const controls = [
     {
       id: 'password_hashing',
@@ -2211,17 +2207,17 @@ saasRouter.post('/account/deactivate', requireAuth, async (req: AuthenticatedReq
   }
   const { password, reason } = req.body || {};
   if (!password) return res.status(400).json({ success: false, error: 'Password confirmation required.' });
-  const db = getDb();
-  const u = db.users.find((x) => x.id === user.id);
-  if (!u || !verifyPassword(password, u.salt, u.passwordHash)) {
+  const u = await authStore.findUserById(user.id);
+  if (!u || !verifyPassword(password, (u as any).salt, (u as any).passwordHash)) {
     return res.status(403).json({ success: false, error: 'Password verification failed.' });
   }
-  u.status = 'suspended';
-  u.deactivatedAt = new Date().toISOString();
-  u.deactivationReason = reason || 'user_requested';
+  await authStore.updateUser(user.id, {
+    status: 'suspended',
+    deactivatedAt: new Date().toISOString(),
+    deactivationReason: reason || 'user_requested',
+  });
   // Revoke all sessions
-  db.sessions = db.sessions.filter((s) => s.userId !== user.id);
-  saveDatabase(db);
+  await authStore.deleteUserSessions(user.id);
   await authStore.logAudit({ userId: user.id, userEmail: user.email, action: 'account_self_deactivated', details: `Self-deactivation (${reason || 'user_requested'})` });
   res.json({ success: true, message: 'Account deactivated. Contact support to reactivate.' });
 });
@@ -2235,30 +2231,30 @@ saasRouter.post('/account/delete-request', requireAuth, async (req: Authenticate
   const { password, confirmText } = req.body || {};
   if (confirmText !== 'DELETE') return res.status(400).json({ success: false, error: 'Type DELETE to confirm.' });
   if (!password) return res.status(400).json({ success: false, error: 'Password confirmation required.' });
-  const db = getDb();
-  const u = db.users.find((x) => x.id === user.id);
-  if (!u || !verifyPassword(password, u.salt, u.passwordHash)) {
+  const u = await authStore.findUserById(user.id);
+  if (!u || !verifyPassword(password, (u as any).salt, (u as any).passwordHash)) {
     return res.status(403).json({ success: false, error: 'Password verification failed.' });
   }
   // Block if sole owner of a workspace with other members
-  const ownedWorkspaces = db.workspaceMembers.filter((m) => m.userId === user.id && m.role === 'owner');
-  for (const ow of ownedWorkspaces) {
-    const otherMembers = db.workspaceMembers.filter((m) => m.workspaceId === ow.workspaceId && m.userId !== user.id);
+  const memberships = await authStore.listUserMemberships(user.id);
+  for (const ow of memberships.filter((m: any) => m.role === 'owner')) {
+    const otherMembers = (await authStore.listWorkspaceMemberRecords(ow.workspaceId)).filter((m: any) => m.userId !== user.id);
     if (otherMembers.length > 0) {
       return res.status(409).json({ success: false, error: 'You own a workspace with other members. Transfer ownership or remove members first.' });
     }
   }
   // Mark for deletion (soft-delete with 30-day recovery window)
-  u.status = 'deleted';
-  u.deletedAt = new Date().toISOString();
-  u.deleteScheduledAt = new Date(Date.now() + 30 * 86400000).toISOString();
-  db.sessions = db.sessions.filter((s) => s.userId !== user.id);
-  // Anonymize PII
-  u.email = `deleted_${u.id}@removed.local`;
-  u.fullName = 'Deleted User';
-  u.passwordHash = 'deleted';
-  u.salt = 'deleted';
-  saveDatabase(db);
+  await authStore.updateUser(user.id, {
+    status: 'deleted',
+    deletedAt: new Date().toISOString(),
+    deleteScheduledAt: new Date(Date.now() + 30 * 86400000).toISOString(),
+    email: `deleted_${u.id}@removed.local`,
+    fullName: 'Deleted User',
+    passwordHash: 'deleted',
+    salt: 'deleted',
+  });
+  // Revoke all sessions
+  await authStore.deleteUserSessions(user.id);
   await authStore.logAudit({ userId: user.id, userEmail: 'deleted', action: 'account_self_deleted', details: 'Account scheduled for deletion (30-day recovery)' });
   res.json({ success: true, message: 'Account scheduled for deletion. You have 30 days to contact support for recovery.' });
 });
@@ -2274,9 +2270,7 @@ saasRouter.post('/account/avatar', requireAuth, async (req: AuthenticatedRequest
     return res.status(400).json({ success: false, code: MEDIA_INGRESS_ERROR_CODE, error: 'Upload the image via POST /api/media/upload and pass the returned URL.' });
   }
   if (avatarUrl.length > 2048) return res.status(400).json({ success: false, error: 'avatarUrl too long' });
-  const db = getDb();
-  const u = db.users.find((x) => x.id === user.id);
-  if (u) { u.avatarUrl = avatarUrl || undefined; saveDatabase(db); }
+  await authStore.updateUser(user.id, { avatarUrl: avatarUrl || undefined });
   res.json({ success: true, avatarUrl });
 });
 
@@ -2323,24 +2317,36 @@ saasRouter.put('/admin/maintenance', requireGodOwner, async (req: AuthenticatedR
 saasRouter.get('/admin/background-ops', requireGodOwner, async (req: AuthenticatedRequest, res: Response) => {
   const { getSchedulerStatus, isSchedulerPaused } = await import('./scheduler.ts');
   const sched = await getSchedulerStatus();
-  const db = getDb();
 
   // Aggregate post/job states across all workspaces
   const postStates: Record<string, number> = {};
   let totalPosts = 0;
-  for (const ws of Object.values(db.workspaceData || {})) {
-    for (const p of (ws as any).posts || []) {
-      postStates[p.status] = (postStates[p.status] || 0) + 1;
-      totalPosts++;
-    }
-  }
-  // Automation executions
   let totalExecs = 0, failedExecs = 0, runningExecs = 0;
-  for (const ws of Object.values(db.workspaceData || {})) {
-    for (const e of (ws as any).automationExecutions || []) {
-      totalExecs++;
-      if (e.status === 'failed') failedExecs++;
-      if (e.status === 'running' || e.status === 'queued' || e.status === 'waiting_approval') runningExecs++;
+  if (authDriver === 'pg') {
+    const pr = await query(`SELECT status::text AS status, count(*)::int AS n FROM posts GROUP BY status`);
+    for (const r of pr.rows) { postStates[r.status] = r.n; totalPosts += r.n; }
+    const er = await query(
+      `SELECT COALESCE(SUM(jsonb_array_length(value::jsonb)),0)::int AS n,
+              COALESCE(SUM((SELECT count(*) FROM jsonb_array_elements(value::jsonb) e WHERE e->>'status'='failed')),0)::int AS failed,
+              COALESCE(SUM((SELECT count(*) FROM jsonb_array_elements(value::jsonb) e WHERE e->>'status' IN ('running','queued','waiting_approval'))),0)::int AS running
+       FROM workspace_kv WHERE key='automationExecutions'`,
+    );
+    totalExecs = er.rows[0].n; failedExecs = er.rows[0].failed; runningExecs = er.rows[0].running;
+  } else {
+    const db = getDb();
+    for (const ws of Object.values(db.workspaceData || {})) {
+      for (const p of (ws as any).posts || []) {
+        postStates[p.status] = (postStates[p.status] || 0) + 1;
+        totalPosts++;
+      }
+    }
+    // Automation executions
+    for (const ws of Object.values(db.workspaceData || {})) {
+      for (const e of (ws as any).automationExecutions || []) {
+        totalExecs++;
+        if (e.status === 'failed') failedExecs++;
+        if (e.status === 'running' || e.status === 'queued' || e.status === 'waiting_approval') runningExecs++;
+      }
     }
   }
   // Drive import jobs
@@ -2424,20 +2430,29 @@ const TASK_DEFS: Record<string, { title: string; desc: string; run: () => Promis
   },
   db_verify: {
     title: 'Verify Database Integrity',
-    desc: 'Parse saas_db.json and count records',
+    desc: 'Verify the active datastore is readable and count records',
     run: async () => {
+      if (authDriver === 'pg') {
+        const r = await query(`SELECT (SELECT count(*) FROM users)::int AS users, (SELECT count(*) FROM workspaces)::int AS workspaces`);
+        return { ok: true, driver: 'pg', users: r.rows[0].users, workspaces: r.rows[0].workspaces };
+      }
       const raw = fs.readFileSync(path.join(process.cwd(), 'data', 'saas_db.json'), 'utf8');
       const db = JSON.parse(raw);
-      return { ok: true, users: db.users?.length || 0, workspaces: db.workspaces?.length || 0, sizeBytes: Buffer.byteLength(raw) };
+      return { ok: true, driver: 'json', users: db.users?.length || 0, workspaces: db.workspaces?.length || 0, sizeBytes: Buffer.byteLength(raw) };
     },
   },
   queue_check: {
     title: 'Check Publishing Queue',
     desc: 'Count pending/failed/scheduled posts',
     run: async () => {
-      const db = getDb();
       const counts: Record<string, number> = {};
-      for (const ws of Object.values(db.workspaceData || {})) for (const p of (ws as any).posts || []) counts[p.status] = (counts[p.status] || 0) + 1;
+      if (authDriver === 'pg') {
+        const r = await query(`SELECT status::text AS status, count(*)::int AS n FROM posts GROUP BY status`);
+        for (const row of r.rows) counts[row.status] = row.n;
+      } else {
+        const db = getDb();
+        for (const ws of Object.values(db.workspaceData || {})) for (const p of (ws as any).posts || []) counts[p.status] = (counts[p.status] || 0) + 1;
+      }
       return { ok: true, byStatus: counts };
     },
   },

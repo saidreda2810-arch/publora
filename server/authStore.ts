@@ -293,6 +293,8 @@ const json = {
   // ---- workspace member mutations ----
   listWorkspaceMemberRecords: (workspaceId: string) =>
     ((db.getDb().workspaceMembers || []) as any[]).filter((m) => m.workspaceId === workspaceId),
+  listUserMemberships: (userId: string) =>
+    ((db.getDb().workspaceMembers || []) as any[]).filter((m) => m.userId === userId),
   addWorkspaceMember: (m: any) => {
     const d = db.getDb();
     d.workspaceMembers = [...(d.workspaceMembers || []), m];
@@ -825,6 +827,21 @@ const pg = {
       id: r.id, workspaceId, userId: r.user_legacy, role: r.role,
       status: r.status, customRoleId: r.custom_role_id || undefined,
       joinedAt: r.joined_at, invitedBy: r.inviter_legacy || undefined,
+    }));
+  },
+  async listUserMemberships(userId: string) {
+    const rows = (await query(
+      `SELECT m.legacy_id AS id, m.role, m.status, m.joined_at, m.custom_role_id,
+              w.legacy_id AS ws_legacy, u.legacy_id AS user_legacy
+       FROM workspace_members m
+       JOIN workspaces w ON w.id=m.workspace_id
+       JOIN users u ON u.id=m.user_id
+       WHERE u.legacy_id=$1 OR u.id::text=$1`,
+      [userId, userId],
+    )).rows;
+    return rows.map((r: any) => ({
+      id: r.id, workspaceId: r.ws_legacy, userId: r.user_legacy, role: r.role,
+      status: r.status, customRoleId: r.custom_role_id || undefined, joinedAt: r.joined_at,
     }));
   },
   async addWorkspaceMember(m: any) {
