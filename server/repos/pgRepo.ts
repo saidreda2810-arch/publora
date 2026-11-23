@@ -236,7 +236,7 @@ function pgEntity(table: string, map: Record<string, string>, jsonCol: string | 
       const legacyId = data.legacyId || data.id || rid('ent');
       const cols = ['legacy_id', 'workspace_id', 'status', 'created_at', ...(hasUpdatedAt ? ['updated_at'] : [])];
       const vals: any[] = [legacyId, ws, data.status || 'active', new Date().toISOString(), ...(hasUpdatedAt ? [new Date().toISOString()] : [])];
-      if (jsonCol) { cols.push(jsonCol); vals.push(JSON.stringify(data)); }
+      if (jsonCol) { cols.push(jsonCol); vals.push(JSON.stringify({ ...data, id: data.id ?? legacyId })); }
       const extraCols: string[] = [];
       for (const [k, col] of Object.entries(map)) {
         if (data[k] !== undefined) { extraCols.push(col); vals.push(typeof data[k] === 'object' ? JSON.stringify(data[k]) : data[k]); }
