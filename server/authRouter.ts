@@ -324,7 +324,7 @@ authRouter.post('/register', bruteForceGuard, async (req: Request, res: Response
 
     // Send verification email (fire-and-forget — never block registration)
     if (verificationToken) {
-      sendMail({ ...verificationEmail(verificationToken), to: user.email }).catch((e) =>
+      sendMail({ ...verificationEmail(verificationToken), to: user.email, template: 'verification' }).catch((e) =>
         console.warn('[mailer] verification email failed:', e?.message || e)
       );
     }
@@ -503,7 +503,7 @@ authRouter.post('/forgot-password', bruteForceGuard, async (req: Request, res: R
   });
 
   // Send reset email (fire-and-forget)
-  sendMail({ ...passwordResetEmail(resetToken), to: user.email }).catch((e) =>
+  sendMail({ ...passwordResetEmail(resetToken), to: user.email, template: 'password_reset' }).catch((e) =>
     console.warn('[mailer] password reset email failed:', e?.message || e)
   );
 
@@ -705,7 +705,7 @@ authRouter.put('/profile', requireAuth, async (req: AuthenticatedRequest, res: R
       });
       emailChangeInitiated = true;
       // Notify the NEW address — confirmation token goes there
-      sendMail({ ...emailChangeEmail(emailChangeToken, cleanEmail), to: cleanEmail }).catch((e) =>
+      sendMail({ ...emailChangeEmail(emailChangeToken, cleanEmail), to: cleanEmail, template: 'email_change' }).catch((e) =>
         console.warn('[mailer] email-change email failed:', e?.message || e)
       );
     } else {
@@ -938,6 +938,7 @@ authRouter.post('/magic-link/send', bruteForceGuard, async (req: Request, res: R
     // Send OTP email (fire-and-forget)
     sendMail({
       to: emailKey,
+      template: 'magic_link',
       subject: 'Your SRA Social Publisher sign-in code',
       text: `Your sign-in code is: ${otpCode}\n\nIt expires in 10 minutes. If you didn't request this, ignore this email.`,
       html: `<p>Your sign-in code:</p><p style="font-size:24px;font-weight:bold;letter-spacing:4px">${otpCode}</p><p>It expires in 10 minutes.</p>`,

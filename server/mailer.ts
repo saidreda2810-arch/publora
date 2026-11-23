@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { query } from './db/client.ts';
 
 /**
  * Transactional mailer.
@@ -18,6 +19,8 @@ export interface MailMessage {
   subject: string;
   text: string;
   html?: string;
+  /** Outbox template tag (verification, password_reset, magic_link, email_change, generic) */
+  template?: string;
 }
 
 export interface MailResult {
@@ -50,6 +53,44 @@ export function mailConfigured(): boolean {
   return Boolean(process.env.SMTP_HOST);
 }
 
+const isPg = () => (process.env.DB_DRIVER || 'json').toLowerCase() === 'pg';
+const MAX_OUTBOX_ATTEMPTS = 10;
+
+/** Enqueue into outbox_emails and return the row id (pg mode only). */
+async function outboxEnqueue(msg: MailMessage): Promise<string | null> {
+  if (!isPg()) return null;
+  try {
+    const r = await query(
+      `INSERT INTO outbox_emails(to_email, template, payload, status, next_attempt_at)
+       VALUES($1, $2, $3::jsonb, 'pending', now()) RETURNING id`,
+      [msg.to, msg.template || 'generic', JSON.stringify({ subject: msg.subject, text: msg.text, html: msg.html || null })]
+    );
+    return r.rows[0]?.id || null;
+  } catch (e: any) {
+    console.error('[mailer] outbox enqueue failed:', e?.message || e);
+    return null;
+  }
+}
+
+async function outboxMark(id: string | null, ok: boolean, error?: string): Promise<void> {
+  if (!id || !isPg()) return;
+  try {
+    if (ok) {
+      await query(`UPDATE outbox_emails SET status='sent', sent_at=now(), attempts=attempts+1, last_error=NULL WHERE id=$1`, [id]);
+    } else {
+      await query(
+        `UPDATE outbox_emails SET attempts=attempts+1, last_error=$2,
+           status=CASE WHEN attempts+1 >= $3 THEN 'failed' ELSE 'pending' END,
+           next_attempt_at=now() + (least(power(2, attempts+1), 240) || ' minutes')::interval
+         WHERE id=$1`,
+        [id, String(error || 'send failed').slice(0, 500), MAX_OUTBOX_ATTEMPTS]
+      );
+    }
+  } catch (e: any) {
+    console.error('[mailer] outbox update failed:', e?.message || e);
+  }
+}
+
 export async function sendMail(msg: MailMessage): Promise<MailResult> {
   const t = getTransporter();
   const from = process.env.MAIL_FROM || 'SRA Publisher <no-reply@localhost>';
@@ -60,13 +101,54 @@ export async function sendMail(msg: MailMessage): Promise<MailResult> {
     return { sent: false, provider: 'log' };
   }
 
+  // Durable path: enqueue first so a crash between send and record can't lose it
+  const outboxId = await outboxEnqueue(msg);
+
   try {
     await t.sendMail({ from, to: msg.to, subject: msg.subject, text: msg.text, html: msg.html });
+    await outboxMark(outboxId, true);
     return { sent: true, provider: 'smtp' };
   } catch (e: any) {
     console.error('[mailer] SMTP send failed:', e?.message || e);
+    await outboxMark(outboxId, false, e?.message || String(e));
     return { sent: false, provider: 'smtp', error: e?.message || String(e) };
   }
+}
+
+/** Drain due outbox rows — called by the periodic worker. */
+export async function processOutboxBatch(limit = 20): Promise<number> {
+  if (!isPg() || !getTransporter()) return 0;
+  const t = getTransporter()!;
+  const from = process.env.MAIL_FROM || 'SRA Publisher <no-reply@localhost>';
+  let processed = 0;
+  try {
+    const due = await query(
+      `SELECT id, to_email, payload FROM outbox_emails
+       WHERE status='pending' AND next_attempt_at <= now() AND attempts < $1
+       ORDER BY next_attempt_at LIMIT $2`,
+      [MAX_OUTBOX_ATTEMPTS, limit]
+    );
+    for (const row of due.rows) {
+      const p = row.payload || {};
+      try {
+        await t.sendMail({ from, to: row.to_email, subject: p.subject || '(no subject)', text: p.text || '', html: p.html || undefined });
+        await outboxMark(row.id, true);
+      } catch (e: any) {
+        await outboxMark(row.id, false, e?.message || String(e));
+      }
+      processed++;
+    }
+  } catch (e: any) {
+    console.error('[mailer] outbox drain failed:', e?.message || e);
+  }
+  return processed;
+}
+
+let outboxTimer: NodeJS.Timeout | null = null;
+export function startMailOutboxWorker(intervalMs = 30_000): void {
+  if (outboxTimer || !isPg()) return;
+  outboxTimer = setInterval(() => { void processOutboxBatch(); }, intervalMs);
+  outboxTimer.unref?.();
 }
 
 export interface MailTemplate {

@@ -251,6 +251,8 @@ async function startServer() {
     await gsHydrate();
     gsStartRefresh();
     console.log('[globalStores] hydrated from PostgreSQL (15s cross-instance refresh)');
+    const { startMailOutboxWorker } = await import('./server/mailer.ts');
+    startMailOutboxWorker();
   }
 
   app.listen(PORT, '0.0.0.0', () => {
