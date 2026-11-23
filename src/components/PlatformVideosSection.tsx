@@ -51,6 +51,65 @@ function fmtDur(sec?: number) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
+export interface PlatformVideosState {
+  items: (PlatformVideoItem & { accountName?: string })[];
+  loading: boolean;
+  errors: string[];
+  unsupported: string[];
+  cached: boolean;
+  reload: () => void;
+}
+
+/** Shared hook — fetches platform content once; used by section + calendar grid. */
+export function usePlatformVideos(mode: 'scheduled' | 'published' | 'all', dayStart?: number, dayEnd?: number): PlatformVideosState {
+  const [items, setItems] = useState<(PlatformVideoItem & { accountName?: string })[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [errors, setErrors] = useState<string[]>([]);
+  const [unsupported, setUnsupported] = useState<string[]>([]);
+  const [cached, setCached] = useState(false);
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setErrors([]); setUnsupported([]); setCached(false);
+      try {
+        const accRes = await apiFetch('/api/oauth/accounts');
+        const accData = await accRes.json().catch(() => ({}));
+        const accs: OAuthAccountLite[] = (accData.accounts || []).filter((a: any) => a.tokenValid !== false && !a.requiresReconnection);
+        const all: (PlatformVideoItem & { accountName?: string })[] = [];
+        await Promise.all(accs.map(async (a) => {
+          try {
+            const r = await apiFetch(`/api/oauth/accounts/${a.id}/platform-videos?status=${mode === 'all' ? 'all' : mode}`);
+            const d = await r.json().catch(() => ({}));
+            if (cancelled) return;
+            if (d.cached) setCached(true);
+            if (d.unsupported) { setUnsupported((u) => [...u, `${a.provider}: ${d.error || 'not supported'}`]); return; }
+            if (!d.ok && d.error) { setErrors((e) => [...e, `${a.accountName || a.provider}: ${d.error}`]); return; }
+            for (const it of d.items || []) all.push({ ...it, accountName: (a as any).accountName });
+          } catch { /* skip account */ }
+        }));
+        if (cancelled) return;
+        let filtered = all;
+        if (dayStart != null && dayEnd != null) {
+          filtered = all.filter((i) => {
+            const t = new Date(i.scheduledAt || i.publishedAt || 0).getTime();
+            return t >= dayStart && t < dayEnd;
+          });
+        }
+        filtered.sort((a, b) => new Date(b.scheduledAt || b.publishedAt || 0).getTime() - new Date(a.scheduledAt || a.publishedAt || 0).getTime());
+        setItems(filtered);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [mode, dayStart, dayEnd, tick]);
+
+  return { items, loading, errors, unsupported, cached, reload: () => setTick((t) => t + 1) };
+}
+
 interface Props {
   /** which slice of platform content to show */
   mode: 'scheduled' | 'published' | 'all';
@@ -68,49 +127,14 @@ interface Props {
 export const PlatformVideosSection: React.FC<Props> = ({
   mode, dayStart, dayEnd, title, emptyText,
 }) => {
-  const [items, setItems] = useState<PlatformVideoItem[]>([]);
+  const { items, loading, errors, unsupported, cached, reload } = usePlatformVideos(mode, dayStart, dayEnd);
   const [accounts, setAccounts] = useState<OAuthAccountLite[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [errors, setErrors] = useState<string[]>([]);
-  const [unsupported, setUnsupported] = useState<string[]>([]);
-  const [cachedNotice, setCachedNotice] = useState(false);
 
-  const load = async () => {
-    setLoading(true);
-    setErrors([]); setUnsupported([]); setCachedNotice(false);
-    try {
-      const accRes = await apiFetch('/api/oauth/accounts');
-      const accData = await accRes.json().catch(() => ({}));
-      const accs: OAuthAccountLite[] = (accData.accounts || []).filter((a: any) => a.tokenValid !== false && !a.requiresReconnection);
-      setAccounts(accs);
-
-      const all: PlatformVideoItem[] = [];
-      await Promise.all(accs.map(async (a) => {
-        try {
-          const r = await apiFetch(`/api/oauth/accounts/${a.id}/platform-videos?status=${mode === 'all' ? 'all' : mode}`);
-          const d = await r.json().catch(() => ({}));
-          if (d.cached) setCachedNotice(true);
-          if (d.unsupported) { setUnsupported((u) => [...u, `${a.provider}: ${d.error || 'not supported'}`]); return; }
-          if (!d.ok && d.error) { setErrors((e) => [...e, `${a.accountName || a.provider}: ${d.error}`]); return; }
-          for (const it of d.items || []) all.push({ ...it, accountName: (a as any).accountName });
-        } catch { /* skip account */ }
-      }));
-
-      let filtered = all;
-      if (dayStart != null && dayEnd != null) {
-        filtered = all.filter((i) => {
-          const t = new Date(i.scheduledAt || i.publishedAt || 0).getTime();
-          return t >= dayStart && t < dayEnd;
-        });
-      }
-      filtered.sort((a, b) => new Date(b.scheduledAt || b.publishedAt || 0).getTime() - new Date(a.scheduledAt || a.publishedAt || 0).getTime());
-      setItems(filtered);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [mode]);
+  useEffect(() => {
+    apiFetch('/api/oauth/accounts').then((r) => r.json()).then((d) => {
+      setAccounts((d.accounts || []).filter((a: any) => a.tokenValid !== false && !a.requiresReconnection));
+    }).catch(() => {});
+  }, []);
 
   if (loading) {
     return (
@@ -129,7 +153,7 @@ export const PlatformVideosSection: React.FC<Props> = ({
           {title || (mode === 'scheduled' ? 'Scheduled on platforms' : mode === 'published' ? 'Published on platforms' : 'Platform content')}
           <span className="text-[10px] font-mono text-[var(--text-muted)]">({items.length})</span>
         </h3>
-        <button onClick={load} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]" title="Refresh">
+        <button onClick={reload} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]" title="Refresh">
           <RefreshCw size={12} />
         </button>
       </div>
@@ -142,7 +166,7 @@ export const PlatformVideosSection: React.FC<Props> = ({
       {unsupported.map((u, i) => (
         <div key={i} className="text-[11px] text-[var(--text-muted)] mb-1">{u}</div>
       ))}
-      {cachedNotice && (
+      {cached && (
         <div className="text-[10px] text-sky-400 mb-1">Showing last synced data — live provider fetch unavailable.</div>
       )}
 

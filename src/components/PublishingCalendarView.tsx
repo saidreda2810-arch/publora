@@ -3,7 +3,7 @@ import { usePublisher } from '../context/PublisherContext';
 import { useAuth } from '../context/AuthContext';
 import { ScheduledPost, Platform, PostStatus, CalendarSettings } from '../types';
 import { apiFetch } from '../lib/api';
-import { PlatformVideosSection } from './PlatformVideosSection';
+import { PlatformVideosSection, usePlatformVideos } from './PlatformVideosSection';
 import {
   ChevronLeft, ChevronRight, PlusCircle, Film, Clock, CheckCircle2,
   XCircle, AlertTriangle, CalendarDays, List, Rows3, CalendarRange,
@@ -117,6 +117,18 @@ export const PublishingCalendarView: React.FC<{ onOpenNewPost: () => void; onSch
     Object.values(Object.fromEntries(m)).forEach((arr: any) => arr.sort((a: ScheduledPost, b: ScheduledPost) => new Date(a.scheduledTime).getTime() - new Date(b.scheduledTime).getTime()));
     return m;
   }, [filteredPosts, tz]);
+
+  // Platform-scheduled videos (live provider data) grouped by day for grid chips
+  const { items: platformItems } = usePlatformVideos('scheduled');
+  const platformByDay = useMemo(() => {
+    const m = new Map<string, any[]>();
+    for (const it of platformItems) {
+      const k = dayKey(it.scheduledAt || it.publishedAt, tz);
+      if (!m.has(k)) m.set(k, []);
+      m.get(k)!.push(it);
+    }
+    return m;
+  }, [platformItems, tz]);
 
   /* ---------- real metrics ---------- */
   const metrics = useMemo(() => {
@@ -403,7 +415,7 @@ export const PublishingCalendarView: React.FC<{ onOpenNewPost: () => void; onSch
       )}
 
       {/* Views */}
-      {filteredPosts.length === 0 && contentIdeas.length === 0 && campaigns.length === 0 ? (
+      {filteredPosts.length === 0 && contentIdeas.length === 0 && campaigns.length === 0 && platformItems.length === 0 ? (
         <div className="py-16 text-center bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl">
           <CalendarDays size={32} className="text-[var(--text-muted)] mx-auto opacity-60 mb-3" />
           <p className="text-sm font-semibold text-[var(--text-primary)]">No scheduled posts yet</p>
@@ -411,7 +423,7 @@ export const PublishingCalendarView: React.FC<{ onOpenNewPost: () => void; onSch
           <button type="button" onClick={onOpenNewPost} className="mt-4 px-4 py-2 rounded-lg bg-[var(--accent-primary)] text-[var(--accent-primary-text)] text-xs font-bold">Schedule Post</button>
         </div>
       ) : view === 'month' ? (
-        <MonthView cells={monthCells} postsByDay={postsByDay} videos={videos} brands={brands} campaigns={campaigns} density={density} maxPerCell={maxPerCell} isToday={isToday} tz={tz} onOpen={setDetailId} onMore={setDayPopover} onScheduleAt={onScheduleAt}
+        <MonthView cells={monthCells} postsByDay={postsByDay} platformByDay={platformByDay} videos={videos} brands={brands} campaigns={campaigns} density={density} maxPerCell={maxPerCell} isToday={isToday} tz={tz} onOpen={setDetailId} onMore={setDayPopover} onScheduleAt={onScheduleAt}
           onDropPost={(postId: string, dayKeyStr: string) => {
             const p = posts.find((x) => x.id === postId);
             if (!p) return;
@@ -430,9 +442,9 @@ export const PublishingCalendarView: React.FC<{ onOpenNewPost: () => void; onSch
             }
           }} />
       ) : view === 'week' ? (
-        <WeekView days={weekDays} postsByDay={postsByDay} videos={videos} brands={brands} density={density} isToday={isToday} tz={tz} workStart={settings.workingHoursStart} workEnd={settings.workingHoursEnd} onOpen={setDetailId} />
+        <WeekView days={weekDays} postsByDay={postsByDay} platformByDay={platformByDay} videos={videos} brands={brands} density={density} isToday={isToday} tz={tz} workStart={settings.workingHoursStart} workEnd={settings.workingHoursEnd} onOpen={setDetailId} />
       ) : view === 'day' ? (
-        <DayView date={cursor} posts={(postsByDay.get(dayKey(cursor.toISOString(), tz)) || [])} videos={videos} brands={brands} tz={tz} onOpen={setDetailId} onReschedule={(id: string) => { const p = posts.find((x) => x.id === id); if (p) { setReschedFor(id); setReschedTime(p.scheduledTime?.slice(0, 16) || ''); } }} />
+        <DayView date={cursor} posts={(postsByDay.get(dayKey(cursor.toISOString(), tz)) || [])} platformItems={(platformByDay.get(dayKey(cursor.toISOString(), tz)) || [])} videos={videos} brands={brands} tz={tz} onOpen={setDetailId} onReschedule={(id: string) => { const p = posts.find((x) => x.id === id); if (p) { setReschedFor(id); setReschedTime(p.scheduledTime?.slice(0, 16) || ''); } }} />
       ) : view === 'list' ? (
         <ListView posts={filteredPosts} videos={videos} brands={brands} campaigns={campaigns} tz={tz} onOpen={setDetailId}
           onBulk={(action: string, ids: string[]) => {
@@ -473,7 +485,8 @@ export const PublishingCalendarView: React.FC<{ onOpenNewPost: () => void; onSch
               <button type="button" onClick={() => setDayPopover(null)} className="p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)]"><X size={15} /></button>
             </div>
             {(postsByDay.get(dayPopover) || []).map((p) => <PostChip key={p.id} post={p} video={videos.find((v) => v.id === p.videoId)} brand={brands.find((b) => b.id === p.brandId)} compact={false} onClick={() => { setDetailId(p.id); setDayPopover(null); }} />)}
-            {(postsByDay.get(dayPopover) || []).length === 0 && <p className="text-[11px] text-[var(--text-muted)]">No posts this day.</p>}
+            {(platformByDay.get(dayPopover) || []).map((it: any) => <PlatformChip key={'plat-' + it.platformVideoId} item={it} compact={false} />)}
+            {(postsByDay.get(dayPopover) || []).length === 0 && (platformByDay.get(dayPopover) || []).length === 0 && <p className="text-[11px] text-[var(--text-muted)]">No posts this day.</p>}
           </div>
         </div>
       )}
@@ -570,7 +583,28 @@ function PostChip({ post, video, brand, campaign, compact, onClick }: any) {
   );
 }
 
-function MonthView({ cells, postsByDay, videos, brands, campaigns, density, maxPerCell, isToday, tz, onOpen, onMore, onScheduleAt, onDropPost }: any) {
+function PlatformChip({ item, compact = true, onClick }: any) {
+  const pl = item.platform || 'other';
+  const color = PLATFORM_COLOR[pl] || '#64748b';
+  const icon = PLATFORM_ICON[pl] || pl.slice(0, 2).toUpperCase();
+  const when = item.scheduledAt || item.publishedAt;
+  const inner = (
+    <>
+      <span className="px-1 py-px rounded text-[7px] font-black text-white shrink-0" style={{ backgroundColor: color }}>{icon}</span>
+      {!compact && <span className="font-mono opacity-70 shrink-0">{fmtTime(when, item._tz)}</span>}
+      <span className="truncate flex-1">{item.title || 'Platform video'}</span>
+      <span className="text-[7px] font-mono uppercase opacity-60 shrink-0">{item.status === 'scheduled' ? 'plat·sched' : 'plat·live'}</span>
+    </>
+  );
+  const cls = "w-full flex items-center gap-1 text-start text-[9px] font-mono px-1 py-0.5 rounded mb-0.5 border border-dashed text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition";
+  const style = { borderColor: color + '66', backgroundColor: color + '14' };
+  if (item.url) {
+    return <a href={item.url} target="_blank" rel="noopener noreferrer" className={cls} style={style} title={`${item.accountName || pl} — opens on platform`}>{inner}</a>;
+  }
+  return <div className={cls} style={style}>{inner}</div>;
+}
+
+function MonthView({ cells, postsByDay, platformByDay, videos, brands, campaigns, density, maxPerCell, isToday, tz, onOpen, onMore, onScheduleAt, onDropPost }: any) {
   const [dragOver, setDragOver] = useState<string | null>(null);
   const chipH = density === 'comfortable' ? 'min-h-[140px]' : density === 'compact' ? 'min-h-[110px]' : 'min-h-[90px]';
   return (
@@ -582,8 +616,10 @@ function MonthView({ cells, postsByDay, videos, brands, campaigns, density, maxP
         {cells.map((c: any, i: number) => {
           const key = dayKey(c.date.toISOString(), tz);
           const dayPosts = postsByDay.get(key) || [];
+          const dayPlatform = platformByDay?.get(key) || [];
           const shown = dayPosts.slice(0, maxPerCell);
           const extra = dayPosts.length - shown.length;
+          const platShown = dayPlatform.slice(0, 2);
           return (
             <div
               key={i}
@@ -596,13 +632,15 @@ function MonthView({ cells, postsByDay, videos, brands, campaigns, density, maxP
             >
               <div className="flex items-center justify-between px-1">
                 <span className={`text-[10px] font-mono ${isToday(c.date) ? 'text-[var(--accent-primary)] font-bold' : 'text-[var(--text-muted)]'}`}>{c.date.getDate()}</span>
-                {dayPosts.length > 0 && <span className="text-[9px] font-mono text-[var(--text-muted)]">{dayPosts.length}</span>}
+                {dayPosts.length + dayPlatform.length > 0 && <span className="text-[9px] font-mono text-[var(--text-muted)]">{dayPosts.length + dayPlatform.length}</span>}
               </div>
               {shown.map((p: ScheduledPost) => (
                 <div key={p.id} draggable={!p.lockedForPublishing && p.status !== 'publishing'} onDragStart={(e) => e.dataTransfer.setData('text/post-id', p.id)} className={p.lockedForPublishing || p.status === 'publishing' ? 'cursor-not-allowed opacity-70' : 'cursor-grab active:cursor-grabbing'}>
                   <PostChip post={p} video={videos.find((v: any) => v.id === p.videoId)} brand={brands.find((b: any) => b.id === p.brandId)} campaign={campaigns.find((c: any) => c.id === (p as any).campaignId)} compact={density === 'dense'} onClick={() => onOpen(p.id)} />
                 </div>
               ))}
+              {platShown.map((it: any) => <PlatformChip key={'plat-' + it.platformVideoId} item={it} compact />)}
+              {dayPlatform.length > platShown.length && <span className="text-[8px] font-mono text-[var(--text-muted)] px-1">+{dayPlatform.length - platShown.length} on platform</span>}
               {extra > 0 && <button type="button" onClick={() => onMore(key)} className="text-[9px] font-mono text-[var(--accent-primary)] hover:underline text-start px-1">+{extra} more</button>}
             </div>
           );
@@ -612,7 +650,7 @@ function MonthView({ cells, postsByDay, videos, brands, campaigns, density, maxP
   );
 }
 
-function WeekView({ days, postsByDay, videos, brands, density, isToday, tz, workStart, workEnd, onOpen }: any) {
+function WeekView({ days, postsByDay, platformByDay, videos, brands, density, isToday, tz, workStart, workEnd, onOpen }: any) {
   const hours = Array.from({ length: 24 }, (_, i) => i);
   return (
     <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl overflow-hidden">
@@ -633,6 +671,7 @@ function WeekView({ days, postsByDay, videos, brands, density, isToday, tz, work
               const key = dayKey(d.toISOString(), tz);
               const inWork = h >= workStart && h < workEnd;
               const hourPosts = (postsByDay.get(key) || []).filter((p: ScheduledPost) => new Date(p.scheduledTime).getHours() === h);
+              const hourPlat = (platformByDay?.get(key) || []).filter((it: any) => { const t = new Date(it.scheduledAt || it.publishedAt || 0); return t.getHours() === h; });
               return (
                 <div key={key + h} className={`border-s border-[var(--border-color)]/50 min-h-[28px] p-0.5 ${inWork ? '' : 'bg-[var(--bg-main)]/30'}`}>
                   {hourPosts.map((p: ScheduledPost) => (
@@ -640,6 +679,7 @@ function WeekView({ days, postsByDay, videos, brands, density, isToday, tz, work
                       {fmtTime(p.scheduledTime, tz)} {p.title || 'Post'}
                     </button>
                   ))}
+                  {hourPlat.map((it: any) => <PlatformChip key={'plat-' + it.platformVideoId} item={it} compact={false} />)}
                 </div>
               );
             })}
@@ -650,8 +690,8 @@ function WeekView({ days, postsByDay, videos, brands, density, isToday, tz, work
   );
 }
 
-function DayView({ date, posts, videos, brands, tz, onOpen, onReschedule }: any) {
-  if (posts.length === 0) return <EmptyDay date={date} tz={tz} />;
+function DayView({ date, posts, platformItems, videos, brands, tz, onOpen, onReschedule }: any) {
+  if (posts.length === 0 && (!platformItems || platformItems.length === 0)) return <EmptyDay date={date} tz={tz} />;
   return (
     <div className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-xl divide-y divide-[var(--border-subtle)]">
       {posts.map((p: ScheduledPost) => {
@@ -669,6 +709,16 @@ function DayView({ date, posts, videos, brands, tz, onOpen, onReschedule }: any)
           </div>
         );
       })}
+      {(platformItems || []).length > 0 && (
+        <>
+          <div className="px-4 py-2 text-[9px] font-mono uppercase tracking-wider text-[var(--text-muted)] border-t border-[var(--border-subtle)]">On your platforms</div>
+          {(platformItems || []).map((it: any) => (
+            <div key={'plat-' + it.platformVideoId} className="px-4 py-2.5 border-t border-[var(--border-subtle)]">
+              <PlatformChip item={it} compact={false} />
+            </div>
+          ))}
+        </>
+      )}
     </div>
   );
 }
