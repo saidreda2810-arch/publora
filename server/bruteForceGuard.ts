@@ -1,7 +1,8 @@
 import crypto from 'crypto';
 import { Request, Response, NextFunction } from 'express';
 import { findUserByEmail, logAuditEvent } from './saasDb.ts';
-import { sharedStateDriver, pgBfGet, pgBfDelete, pgBfRecordFailure } from './sharedState.ts';
+import { authStore } from './authStore.ts';
+import { sharedStateDriver, pgBfGet, pgBfDelete, pgBfPut, pgBfRecordFailure } from './sharedState.ts';
 
 // ============================================================================
 // Brute-Force / Credential-Stuffing Protection Guard
@@ -327,20 +328,38 @@ async function pgFailureCount(identity: GuardIdentity) {
   return { ip: ip.failures, account: acct?.failures ?? 0 };
 }
 
+async function pgIsPrivilegedEmail(email?: string): Promise<boolean> {
+  if (!email) return false;
+  try {
+    const user = await authStore.findUserByEmail(email);
+    return !!user && PRIVILEGED_ROLES.has(user.role);
+  } catch {
+    return false;
+  }
+}
+
+async function pgAuditSecurityEvent(action: string, details: string, ip?: string, email?: string) {
+  try {
+    await authStore.logAudit({ action, details, ip: ip || undefined, userEmail: email || undefined });
+  } catch (e) {
+    console.error('[brute-force-guard] pg audit log failed:', e);
+  }
+}
+
 async function pgRecordAuthFailure(identity: GuardIdentity) {
   const now = Date.now();
   const ip = identity.ip || 'unknown';
   const ipOutcome = await pgBfRecordFailure('ip', ip, config.ipWindowMs, config.ipMaxFailures, config.ipRestrictMs, config.maxRestrictMs, now);
   if (ipOutcome.restricted) {
-    auditSecurityEvent('brute_force_ip_restricted', 'IP temporarily restricted after repeated failed authentications.', ip);
+    await pgAuditSecurityEvent('brute_force_ip_restricted', 'IP temporarily restricted after repeated failed authentications.', ip);
     console.warn(`[security] brute-force(pg): IP restricted for ${Math.ceil((ipOutcome.restrictUntil - now) / 1000)}s`);
   }
   if (identity.email) {
-    const privileged = isPrivilegedEmail(identity.email);
+    const privileged = await pgIsPrivilegedEmail(identity.email);
     const maxFailures = privileged ? config.adminAccountMaxFailures : config.accountMaxFailures;
     const acctOutcome = await pgBfRecordFailure('acct', hashIdentity(identity.email), config.accountWindowMs, maxFailures, config.accountRestrictMs, config.maxRestrictMs, now);
     if (acctOutcome.restricted) {
-      auditSecurityEvent('brute_force_account_restricted', `Account temporarily restricted after repeated failed authentications${privileged ? ' (privileged role — stricter policy)' : ''}.`, ip, identity.email);
+      await pgAuditSecurityEvent('brute_force_account_restricted', `Account temporarily restricted after repeated failed authentications${privileged ? ' (privileged role — stricter policy)' : ''}.`, ip, identity.email);
       console.warn(`[security] brute-force(pg): account restricted for ${Math.ceil((acctOutcome.restrictUntil - now) / 1000)}s`);
     }
   }
@@ -352,7 +371,7 @@ async function pgRecordAuthSuccess(identity: GuardIdentity) {
     const acctKey = hashIdentity(identity.email);
     const acctRec = await pgBfGet('acct', acctKey);
     if (acctRec.failures >= config.progressiveDelayAfterFailures) {
-      auditSecurityEvent('login_success_after_failures', 'Successful authentication after repeated prior failures.', identity.ip, identity.email);
+      await pgAuditSecurityEvent('login_success_after_failures', 'Successful authentication after repeated prior failures.', identity.ip, identity.email);
     }
     await pgBfDelete('acct', acctKey);
   }
@@ -360,7 +379,6 @@ async function pgRecordAuthSuccess(identity: GuardIdentity) {
   if (ipRec.failures > 0) {
     ipRec.failures = Math.max(0, ipRec.failures - 1);
     ipRec.lastFailureAt = now;
-    const { pgBfPut } = await import('./sharedState.ts');
     await pgBfPut('ip', identity.ip || 'unknown', ipRec);
   }
 }
@@ -399,7 +417,8 @@ export function bruteForceGuard(req: Request, res: Response, next: NextFunction)
     const verdict = usePg ? await pgCheckRestricted(identity) : checkRestricted(identity);
     if (verdict.restricted) {
       res.setHeader('Retry-After', String(verdict.retryAfterSeconds));
-      auditSecurityEvent('brute_force_blocked', `Blocked authentication attempt during active restriction (${verdict.scope}).`, identity.ip, identity.email);
+      if (usePg) void pgAuditSecurityEvent('brute_force_blocked', `Blocked authentication attempt during active restriction (${verdict.scope}).`, identity.ip, identity.email);
+      else auditSecurityEvent('brute_force_blocked', `Blocked authentication attempt during active restriction (${verdict.scope}).`, identity.ip, identity.email);
       return res.status(429).json({
         success: false,
         error: GENERIC_BLOCK_MESSAGE,
