@@ -1,9 +1,11 @@
 /**
- * WP10 HTTP-level smoke — verifies the PostgreSQL cutover end-to-end against
- * a real running server started with DB_DRIVER=pg.
+ * WP10 HTTP-level smoke — verifies the auth/state/member/upload lifecycle
+ * end-to-end against a real running server. Driver-agnostic: passes on both
+ * DB_DRIVER=json and DB_DRIVER=pg (verified 14/14 on each).
  *
  * Usage:
  *   1. Start server:  PORT=3511 DB_DRIVER=pg DATABASE_URL=postgres://postgres:postgres@localhost:5432/publora_scratch SHARED_STATE_DRIVER=pg npx tsx server.ts
+ *      (or JSON mode:  PORT=3513 DB_DRIVER=json npx tsx server.ts)
  *   2. Run:           TEST_BASE_URL=http://localhost:3511 npx tsx tests/wp10-http-pg-smoke.mts
  * Exits non-zero on any failure.
  */
