@@ -1,5 +1,6 @@
 import { ensureAccessToken } from './platformAdapters/tokens.ts';
 import type { SocialAccountRecord } from './oauthStore.ts';
+import { query } from './db/client.ts';
 
 /**
  * Read-only listing of content that already exists ON the platform
@@ -153,6 +154,83 @@ async function listMeta(account: SocialAccountRecord): Promise<PlatformContentRe
   return { ok: true, items, ...(errors.length ? { error: errors.join('; ') } : {}) };
 }
 
+// ---------------------------------------------------------------- persistence
+// platform_content_items (migration 0012) — durable mirror so Queue/History/
+// Calendar can read synced content without a live provider call per view.
+
+async function workspaceUuid(legacyId?: string): Promise<string | null> {
+  if (!legacyId) return null;
+  const r = await query('SELECT id FROM workspaces WHERE legacy_id=$1', [legacyId]);
+  return r.rows[0]?.id ?? null;
+}
+
+/** Upsert fetched items into platform_content_items. Best-effort — never throws. */
+export async function persistPlatformItems(account: SocialAccountRecord, items: PlatformVideoItem[]): Promise<void> {
+  const wsId = await workspaceUuid(account.workspaceId);
+  if (!wsId || !items.length) return;
+  for (const it of items) {
+    try {
+      await query(
+        `INSERT INTO platform_content_items
+           (workspace_id, social_account_id, platform, channel_id, platform_video_id,
+            title, url, thumbnail_url, status, privacy_status, scheduled_at, published_at,
+            duration_sec, views, likes, comments, payload, last_synced_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::jsonb,now(),now())
+         ON CONFLICT (social_account_id, platform_video_id) DO UPDATE SET
+           title=EXCLUDED.title, url=EXCLUDED.url, thumbnail_url=EXCLUDED.thumbnail_url,
+           status=EXCLUDED.status, privacy_status=EXCLUDED.privacy_status,
+           scheduled_at=EXCLUDED.scheduled_at, published_at=EXCLUDED.published_at,
+           duration_sec=EXCLUDED.duration_sec, views=EXCLUDED.views, likes=EXCLUDED.likes,
+           comments=EXCLUDED.comments, payload=EXCLUDED.payload,
+           last_synced_at=now(), updated_at=now()`,
+        [wsId, account.id, it.platform, it.channelId ?? null, it.platformVideoId,
+         it.title, it.url ?? null, it.thumbnailUrl ?? null, it.status, it.privacyStatus ?? null,
+         it.scheduledAt ?? null, it.publishedAt ?? null, it.durationSec ?? null,
+         it.views ?? null, it.likes ?? null, it.comments ?? null,
+         JSON.stringify(it)],
+      );
+    } catch (e: any) {
+      console.warn('[platformContent] persist failed for', it.platformVideoId, e?.message || e);
+    }
+  }
+}
+
+/** Read stored items — used as fallback when live provider call fails. */
+export async function listStoredPlatformItems(
+  account: SocialAccountRecord,
+  opts: { status?: 'all' | 'scheduled' | 'published' } = {},
+): Promise<PlatformVideoItem[]> {
+  const wsId = await workspaceUuid(account.workspaceId);
+  if (!wsId) return [];
+  const conds = ['workspace_id=$1', 'social_account_id=$2'];
+  const vals: any[] = [wsId, account.id];
+  if (opts.status === 'scheduled') conds.push(`status='scheduled'`);
+  else if (opts.status === 'published') conds.push(`status='published'`);
+  const r = await query(
+    `SELECT platform, channel_id, platform_video_id, title, url, thumbnail_url, status,
+            scheduled_at, published_at, duration_sec, views, likes, comments
+     FROM platform_content_items WHERE ${conds.join(' AND ')}
+     ORDER BY COALESCE(scheduled_at, published_at) DESC NULLS LAST LIMIT 200`,
+    vals,
+  );
+  return r.rows.map((row: any) => ({
+    platform: row.platform,
+    accountId: account.id,
+    channelId: row.channel_id ?? undefined,
+    platformVideoId: row.platform_video_id,
+    title: row.title,
+    url: row.url ?? undefined,
+    thumbnailUrl: row.thumbnail_url ?? undefined,
+    status: row.status,
+    scheduledAt: row.scheduled_at ? new Date(row.scheduled_at).toISOString() : undefined,
+    publishedAt: row.published_at ? new Date(row.published_at).toISOString() : undefined,
+    durationSec: row.duration_sec ?? undefined,
+    views: row.views != null ? Number(row.views) : undefined,
+    likes: row.likes ?? undefined,
+    comments: row.comments ?? undefined,
+  }));
+}
+
 export async function listPlatformVideos(
   account: SocialAccountRecord,
   opts: { status?: 'all' | 'scheduled' | 'published'; max?: number } = {},
@@ -163,6 +241,10 @@ export async function listPlatformVideos(
     else if (account.provider === 'tiktok') result = await listTikTok(account);
     else result = await listMeta(account);
 
+    // Persist the full fetched set (pre-filter) so stored rows cover all statuses.
+    if (result.ok && result.items.length) {
+      await persistPlatformItems(account, result.items).catch(() => {});
+    }
     if (opts.status && opts.status !== 'all') {
       result.items = result.items.filter((i) => i.status === opts.status);
     }

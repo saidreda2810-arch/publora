@@ -1219,8 +1219,16 @@ oauthRouter.get('/accounts/:id/platform-videos', requireAuth, async (req: Authen
   }
   const status = (['all', 'scheduled', 'published'] as const).includes(req.query.status as any)
     ? (req.query.status as 'all' | 'scheduled' | 'published') : 'all';
-  const { listPlatformVideos } = await import('./platformContent.ts');
+  const { listPlatformVideos, listStoredPlatformItems } = await import('./platformContent.ts');
   const result = await listPlatformVideos(account, { status });
+  // Live fetch failed → serve the last synced rows from platform_content_items
+  // so the UI still shows what we know, clearly marked as cached.
+  if (!result.ok && !result.unsupported) {
+    const stored = await listStoredPlatformItems(account, { status }).catch(() => []);
+    if (stored.length) {
+      return res.json({ success: true, ok: true, items: stored, cached: true, error: result.error });
+    }
+  }
   res.json({ success: result.ok || result.unsupported, ...result });
 });
 

@@ -73,10 +73,11 @@ export const PlatformVideosSection: React.FC<Props> = ({
   const [loading, setLoading] = useState(true);
   const [errors, setErrors] = useState<string[]>([]);
   const [unsupported, setUnsupported] = useState<string[]>([]);
+  const [cachedNotice, setCachedNotice] = useState(false);
 
   const load = async () => {
     setLoading(true);
-    setErrors([]); setUnsupported([]);
+    setErrors([]); setUnsupported([]); setCachedNotice(false);
     try {
       const accRes = await apiFetch('/api/oauth/accounts');
       const accData = await accRes.json().catch(() => ({}));
@@ -88,6 +89,7 @@ export const PlatformVideosSection: React.FC<Props> = ({
         try {
           const r = await apiFetch(`/api/oauth/accounts/${a.id}/platform-videos?status=${mode === 'all' ? 'all' : mode}`);
           const d = await r.json().catch(() => ({}));
+          if (d.cached) setCachedNotice(true);
           if (d.unsupported) { setUnsupported((u) => [...u, `${a.provider}: ${d.error || 'not supported'}`]); return; }
           if (!d.ok && d.error) { setErrors((e) => [...e, `${a.accountName || a.provider}: ${d.error}`]); return; }
           for (const it of d.items || []) all.push({ ...it, accountName: (a as any).accountName });
@@ -140,6 +142,9 @@ export const PlatformVideosSection: React.FC<Props> = ({
       {unsupported.map((u, i) => (
         <div key={i} className="text-[11px] text-[var(--text-muted)] mb-1">{u}</div>
       ))}
+      {cachedNotice && (
+        <div className="text-[10px] text-sky-400 mb-1">Showing last synced data — live provider fetch unavailable.</div>
+      )}
 
       {items.length === 0 ? (
         <p className="text-[11px] text-[var(--text-muted)] py-2">{emptyText || 'No platform content found.'}</p>
