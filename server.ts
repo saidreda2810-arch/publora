@@ -63,11 +63,19 @@ app.use((req: Request, res: Response, next) => {
   if (process.env.SHARED_APP_URL) {
     try { allowed.add(new URL(process.env.SHARED_APP_URL).origin); } catch {}
   }
+  for (const extra of (process.env.EXTRA_ALLOWED_ORIGINS || '').split(',')) {
+    const o = extra.trim();
+    if (o) allowed.add(o);
+  }
   const reqHost = req.get('host');
   let originHost = '';
   try { originHost = new URL(origin).host; } catch { return res.status(403).json({ success: false, error: 'Forbidden: invalid Origin.' }); }
   const hostAllowed = reqHost && originHost === reqHost;
-  if (!allowed.has(origin) && !hostAllowed) {
+  // Development only: allow loopback origins on any port (vite preview proxies,
+  // IDE browser previews). Remote origins are still rejected in production.
+  const isDev = process.env.NODE_ENV !== 'production';
+  const loopbackAllowed = isDev && /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(new URL(origin).hostname);
+  if (!allowed.has(origin) && !hostAllowed && !loopbackAllowed) {
     return res.status(403).json({ success: false, error: 'Forbidden: cross-origin request.' });
   }
   next();
