@@ -3,6 +3,8 @@
 // records executions persistently. No fabricated results.
 
 import { getDb, saveDatabase, getWorkspaceData, saveWorkspaceData } from './saasDb.ts';
+import { sharedStateDriver } from './sharedState.ts';
+import { query } from './db/client.ts';
 
 const MAX_STEPS_PER_EXECUTION = 25;
 const MAX_EXECUTION_MS = 5 * 60 * 1000;
@@ -57,10 +59,35 @@ function triggerBucket(wf: Workflow, now: number): string | null {
   }
 }
 
-function shouldFire(wf: Workflow, now: number): boolean {
+async function shouldFire(wf: Workflow, now: number): Promise<boolean> {
   const bucket = triggerBucket(wf, now);
   if (!bucket) return false;
   const key = `${wf.id}:${bucket}`;
+
+  // WP7: when PG shared state is on, dedupe atomically across instances.
+  // UPDATE ... WHERE last_trigger_hash <> key claims the bucket in one statement.
+  if (sharedStateDriver() === 'pg') {
+    try {
+      const r = await query(
+        `UPDATE automation_workflows SET last_trigger_hash=$2, last_triggered_at=now()
+         WHERE legacy_id=$1 AND (last_trigger_hash IS NULL OR last_trigger_hash <> $2)`,
+        [wf.id, key]);
+      if ((r.rowCount ?? 0) > 0) return true;
+      // 0 rows: either already fired this bucket (dedupe works) OR workflow not
+      // migrated to PG yet — distinguish by checking existence.
+      const exists = await query('SELECT 1 FROM automation_workflows WHERE legacy_id=$1 LIMIT 1', [wf.id]);
+      if (exists.rows.length === 0) {
+        // JSON-only workflow — fall back to per-instance memory dedupe.
+        if (lastTriggerHash.get(key)) return false;
+        lastTriggerHash.set(key, now);
+        return true;
+      }
+      return false;
+    } catch (e) {
+      console.error('[automation] pg trigger dedupe failed, memory fallback:', e);
+    }
+  }
+
   if (lastTriggerHash.get(key)) return false;
   lastTriggerHash.set(key, now);
   // Cleanup old keys
@@ -320,7 +347,7 @@ export async function runAutomationCycle() {
           const ev = detectWorkspaceEvents(wsId, wf);
           if (ev.found === 0) continue;
         }
-        if (shouldFire(wf, now)) {
+        if (await shouldFire(wf, now)) {
           await runWorkflow(wsId, wf);
         }
       } catch (e: any) {
