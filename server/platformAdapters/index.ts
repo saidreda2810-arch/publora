@@ -10,6 +10,7 @@ import type { PlatformAdapter, PublishOutcome, PublishVideoInput } from './types
 import { youtubeAdapter } from './youtube.ts';
 import { tiktokAdapter } from './tiktok.ts';
 import { metaAdapter } from './meta.ts';
+import { ensurePlatformAspect } from '../mediaTranscode.ts';
 
 const ADAPTERS: Record<string, PlatformAdapter> = {
   youtube: youtubeAdapter,
@@ -86,14 +87,27 @@ export async function publishToPlatform(post: any, wsData: any, platform: string
     return { ok: false, error: 'invalid_media', message: 'Video file is empty.' };
   }
 
+  // Reframe to the platform's preferred aspect when needed (e.g. 16:9 source → 9:16 for Reels/TikTok).
+  let mediaPath = media.videoPath;
+  let transcoded = false;
+  let cleanup = () => {};
+  try {
+    const t = await ensurePlatformAspect(media.videoPath, platform);
+    mediaPath = t.videoPath;
+    transcoded = t.transcoded;
+    cleanup = t.cleanup;
+  } catch (e: any) {
+    return { ok: false, error: 'transcode_failed', message: `Could not reframe video for ${platform}: ${e?.message || e}` };
+  }
+
   const input: PublishVideoInput = {
     post,
     wsData,
     oauthAccount: target.account,
     channel: target.channel,
-    videoPath: media.videoPath,
-    mimeType: media.mimeType,
-    fileSizeBytes: media.size,
+    videoPath: mediaPath,
+    mimeType: transcoded ? 'video/mp4' : media.mimeType,
+    fileSizeBytes: transcoded ? fs.statSync(mediaPath).size : media.size,
   };
 
   try {
@@ -108,5 +122,7 @@ export async function publishToPlatform(post: any, wsData: any, platform: string
       return { ok: false, uncertain: true, error: 'network_error', message: msg };
     }
     return { ok: false, error: 'adapter_error', message: msg };
+  } finally {
+    cleanup();
   }
 }
