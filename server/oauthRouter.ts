@@ -19,27 +19,32 @@ import {
   decryptToken,
 } from './oauthStore.ts';
 import { requireAuth, requireGodOwner, AuthenticatedRequest } from './authRouter.ts';
-import { getWorkspaceData, logAuditEvent } from './saasDb.ts';
+import { getWorkspaceData } from './saasDb.ts';
+import { getRepos } from './repos/index.ts';
+import { authStore } from './authStore.ts';
 
 export const oauthRouter = express.Router();
 
 // ---- Workspace isolation helpers ----
 // Brands are workspace-scoped entities; OAuth accounts inherit tenancy via brandId.
 // Legacy records without workspaceId are matched through their brand's workspace.
-function workspaceBrandIds(workspaceId: string | undefined): Set<string> {
+async function workspaceBrandIds(workspaceId: string | undefined): Promise<Set<string>> {
   if (!workspaceId) return new Set();
   try {
-    return new Set((getWorkspaceData(workspaceId).brands || []).map((b: any) => b.id));
+    const data: any = process.env.DB_DRIVER === 'pg'
+      ? await getRepos().workspaceState.get(workspaceId)
+      : getWorkspaceData(workspaceId);
+    return new Set((data.brands || []).map((b: any) => b.id));
   } catch {
     return new Set();
   }
 }
 
-function accountInWorkspace(acc: { brandId?: string; workspaceId?: string }, req: AuthenticatedRequest): boolean {
+async function accountInWorkspace(acc: { brandId?: string; workspaceId?: string }, req: AuthenticatedRequest): Promise<boolean> {
   const wsId = req.workspace?.id;
   if (!wsId) return false;
   if (acc.workspaceId) return acc.workspaceId === wsId;
-  return workspaceBrandIds(wsId).has(acc.brandId || '');
+  return (await workspaceBrandIds(wsId)).has(acc.brandId || '');
 }
 
 // Duplicate prevention: same platform identity + brand = same connection
@@ -53,13 +58,13 @@ function findExistingAccount(provider: SocialProvider, externalAccountId: string
 function audit(req: AuthenticatedRequest | Request, action: string, details: string) {
   const r = req as AuthenticatedRequest;
   try {
-    logAuditEvent({
+    void Promise.resolve(authStore.logAudit({
       userId: r.user?.id,
       userEmail: r.user?.email,
       workspaceId: r.workspace?.id,
       action,
       details,
-    });
+    })).catch(() => {});
   } catch { /* audit must never break the request */ }
 }
 
@@ -244,7 +249,7 @@ oauthRouter.post('/authorize-url', requireAuth, async (req: AuthenticatedRequest
 
   // Tenant validation: brand must belong to the authenticated workspace
   const wsId = req.workspace?.id;
-  if (!wsId || !workspaceBrandIds(wsId).has(brandId)) {
+  if (!wsId || !(await workspaceBrandIds(wsId)).has(brandId)) {
     return res.status(403).json({ success: false, error: 'Brand not found in this workspace.' });
   }
 
@@ -1146,12 +1151,12 @@ oauthRouter.get(['/callback/:provider', '/callback/:provider/'], async (req: Req
 });
 
 // 5. Get All Connected Accounts (Sanitized, tokens never exposed)
-oauthRouter.get('/accounts', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+oauthRouter.get('/accounts', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const { brandId } = req.query;
   // Tenant isolation: only accounts belonging to the authenticated workspace.
   // Legacy records without workspaceId are matched via their brand's workspace.
-  const brandScope = workspaceBrandIds(req.workspace?.id);
-  let accounts = getAllAccounts().filter((a) => accountInWorkspace(a, req));
+  const brandScope = await workspaceBrandIds(req.workspace?.id);
+  let accounts = await (async () => { const all = getAllAccounts(); const flags = await Promise.all(all.map((a) => accountInWorkspace(a, req))); return all.filter((_, i) => flags[i]); })();
 
   if (brandId && typeof brandId === 'string') {
     if (!brandScope.has(brandId)) {
@@ -1181,12 +1186,12 @@ oauthRouter.get('/accounts', requireAuth, (req: AuthenticatedRequest, res: Respo
 });
 
 // 6. Select Channels / Pages for Brand
-oauthRouter.post('/accounts/:id/select-channels', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+oauthRouter.post('/accounts/:id/select-channels', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const { selectedChannelIds } = req.body as { selectedChannelIds: string[] };
 
   const account = getAccountById(id);
-  if (!account || !accountInWorkspace(account, req)) {
+  if (!account || !(await accountInWorkspace(account, req))) {
     return res.status(404).json({ success: false, error: 'Account not found.' });
   }
 
@@ -1207,10 +1212,10 @@ oauthRouter.post('/accounts/:id/select-channels', requireAuth, (req: Authenticat
 
 // 6c. Platform capability report — derived from ACTUAL granted permissions,
 // channel eligibility, and provider-specific rules. Never assumes capabilities.
-oauthRouter.get('/accounts/:id/capabilities', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+oauthRouter.get('/accounts/:id/capabilities', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const account = getAccountById(id);
-  if (!account || !accountInWorkspace(account, req)) {
+  if (!account || !(await accountInWorkspace(account, req))) {
     return res.status(404).json({ success: false, error: 'Account not found.' });
   }
 
@@ -1293,17 +1298,17 @@ oauthRouter.get('/accounts/:id/capabilities', requireAuth, (req: AuthenticatedRe
 });
 
 // 6b. Reassign account to a different brand (workspace-validated)
-oauthRouter.post('/accounts/:id/brand', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+oauthRouter.post('/accounts/:id/brand', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const { brandId } = req.body as { brandId: string };
 
   const account = getAccountById(id);
-  if (!account || !accountInWorkspace(account, req)) {
+  if (!account || !(await accountInWorkspace(account, req))) {
     return res.status(404).json({ success: false, error: 'Account not found.' });
   }
 
   const wsId = req.workspace?.id;
-  const brandScope = workspaceBrandIds(wsId);
+  const brandScope = await workspaceBrandIds(wsId);
   if (!brandId || (brandId !== 'workspace' && !brandScope.has(brandId))) {
     return res.status(403).json({ success: false, error: 'Brand not found in this workspace.' });
   }
@@ -1319,7 +1324,7 @@ oauthRouter.post('/accounts/:id/brand', requireAuth, (req: AuthenticatedRequest,
 oauthRouter.post('/accounts/:id/refresh', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const account = getAccountById(id);
-  if (!account || !accountInWorkspace(account, req)) {
+  if (!account || !(await accountInWorkspace(account, req))) {
     return res.status(404).json({ success: false, error: 'Account not found.' });
   }
 
@@ -1467,7 +1472,7 @@ oauthRouter.post('/accounts/:id/diagnostics', requireAuth, async (req: Authentic
   const { id } = req.params;
   const account = getAccountById(id);
 
-  if (!account || !accountInWorkspace(account, req)) {
+  if (!account || !(await accountInWorkspace(account, req))) {
     return res.status(404).json({ success: false, error: 'Account not found.' });
   }
 
@@ -1574,7 +1579,7 @@ oauthRouter.delete('/accounts/:id', requireAuth, async (req: AuthenticatedReques
   const { id } = req.params;
   const account = getAccountById(id);
 
-  if (!account || !accountInWorkspace(account, req)) {
+  if (!account || !(await accountInWorkspace(account, req))) {
     return res.status(404).json({ success: false, error: 'Account not found.' });
   }
 

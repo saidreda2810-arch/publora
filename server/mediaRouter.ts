@@ -4,6 +4,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { requireAuth, AuthenticatedRequest } from './authRouter.ts';
 import { getWorkspaceData } from './saasDb.ts';
+import { getRepos } from './repos/index.ts';
 import { authStore } from './authStore.ts';
 import { getStorageProvider } from './storage/storageProvider.ts';
 import {
@@ -457,7 +458,7 @@ mediaRouter.delete('/:id', async (req: AuthenticatedRequest, res: Response) => {
   }
 
   // Reference guard: scheduled/published posts and videos may point at this asset.
-  const wsData = getWorkspaceData(workspaceId!);
+  const wsData: any = process.env.DB_DRIVER === 'pg' ? await getRepos().workspaceState.get(workspaceId!) : getWorkspaceData(workspaceId!);
   const refs: string[] = [];
   const needle = asset.storageKey || asset.filename || '';
   for (const v of (wsData.videos || []) as any[]) {

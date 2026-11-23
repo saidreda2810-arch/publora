@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { GoogleGenAI } from '@google/genai';
 import { requireAuth, AuthenticatedRequest } from './authRouter.ts';
 import { getWorkspaceData } from './saasDb.ts';
+import { getRepos } from './repos/index.ts';
 import fs from 'fs';
 import path from 'path';
 
@@ -363,7 +364,7 @@ aiRouter.post('/analyze-video', async (req: Request, res: Response) => {
     const wsId = (req as AuthenticatedRequest).workspace?.id;
     if (videoId && wsId && aiClient) {
       try {
-        const wsData = getWorkspaceData(wsId);
+        const wsData: any = process.env.DB_DRIVER === 'pg' ? await getRepos().workspaceState.get(wsId) : getWorkspaceData(wsId);
         const video = (wsData.videos || []).find((v: any) => v.id === videoId);
         const fileName = video?.fileName;
         if (fileName) {

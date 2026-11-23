@@ -311,7 +311,21 @@ driveRouter.get('/files/:fileId', requireAuth, async (req: AuthenticatedRequest,
 
 // ==================== PHASE 4: IMPORT PIPELINE ====================
 import { getWorkspaceData, saveWorkspaceData } from './saasDb.ts';
+import { getRepos } from './repos/index.ts';
 import { getUploadPolicy, planLimitBytes, workspaceUsageBytes, workspaceVideoCount } from './uploadPolicy.ts';
+
+const isPgDriver = () => process.env.DB_DRIVER === 'pg';
+async function wsGetBlob(wsId: string): Promise<any> {
+  if (!isPgDriver()) return getWorkspaceData(wsId);
+  return { ...(await getRepos().workspaceState.get(wsId)) };
+}
+async function wsSaveBlob(wsId: string, data: any): Promise<void> {
+  if (!isPgDriver()) { saveWorkspaceData(wsId, data); return; }
+  const r = getRepos();
+  const v = await r.workspaceState.getVersion(wsId);
+  const ok = await r.workspaceState.save(wsId, data, v);
+  if (!ok) console.warn('[drive] workspaceState CAS conflict for', wsId);
+}
 
 const IMPORTS_FILE = path.join(DATA_DIR, 'drive_imports.json');
 const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
@@ -358,7 +372,7 @@ driveRouter.post('/import', requireAuth, async (req: AuthenticatedRequest, res: 
   if (!Array.isArray(fileIds) || fileIds.length === 0) return res.status(400).json({ success: false, error: 'fileIds required' });
   if (fileIds.length > 20) return res.status(400).json({ success: false, error: 'Max 20 files per import' });
 
-  const data = getWorkspaceData(wsId);
+  const data = await wsGetBlob(wsId);
   const brand = (data.brands || []).find((b: any) => b.id === brandId);
   if (!brand) return res.status(403).json({ success: false, error: 'Brand not found in this workspace' });
   if (projectId && !(data.projects || []).some((p: any) => p.id === projectId && p.brandId === brandId)) {
@@ -461,7 +475,7 @@ async function runImport(jobId: string, token: string) {
     updateJob(jobId, { status: 'extracting' });
 
     // Create VideoAsset in workspace
-    const wsData = getWorkspaceData(job.workspaceId);
+    const wsData = await wsGetBlob(job.workspaceId);
     const videoId = `vid_drive_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
     const ext = job.fileName.split('.').pop() || 'mp4';
     const video = {
@@ -484,7 +498,7 @@ async function runImport(jobId: string, token: string) {
       sourceDriveAccount: job.connectionId,
       createdAt: new Date().toISOString(),
     };
-    saveWorkspaceData(job.workspaceId, { ...wsData, videos: [...(wsData.videos || []), video] });
+    await wsSaveBlob(job.workspaceId, { ...wsData, videos: [...(wsData.videos || []), video] });
     updateJob(jobId, { status: 'ready', videoId, progressBytes: received });
   } catch (e: any) {
     try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch {}
