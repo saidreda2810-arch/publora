@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { publishToPlatform } from './platformAdapters/index.ts';
 
 /**
  * Publishing engine — reliability layer for the background scheduler.
@@ -6,12 +7,10 @@ import crypto from 'crypto';
  * Pipeline per post: claim (atomic) → stage events → platform attempt →
  * verify → complete | fail → classify → retry with backoff | dead-letter.
  *
- * NOTE: actual third-party platform API calls are NOT implemented in this
- * codebase — OAuth connects accounts but no publish/upload endpoint exists
- * yet. The engine records the full lifecycle honestly: a post is only marked
- * 'published' when the platform step reports success. Until platform adapters
- * exist, 'attemptPlatformPublish' returns a structured "adapter_missing"
- * outcome so posts fail safely with a clear error instead of fake success.
+ * Platform adapters live in server/platformAdapters/ (YouTube, TikTok, Meta).
+ * They return ok:true ONLY after the platform confirms the upload/publish.
+ * Platforms without a real connected OAuth account fail honestly with
+ * 'no_connected_account' / 'auth_expired' / 'adapter_missing'.
  */
 
 export interface PublishEvent {
@@ -86,23 +85,18 @@ async function attemptPlatformPublish(post: any, wsData: any): Promise<{ ok: boo
   const results: any[] = [];
 
   for (const platform of platforms) {
-    // Resolve the social account for this platform within the brand
-    const accounts = (wsData.accounts || []).filter((a: any) => a.brandId === post.brandId && a.platform === platform);
-    const account = accounts.find((a: any) => a.isConnected && !a.requiresReconnection && a.tokenValid !== false);
-
-    if (!account) {
-      results.push({ platform, ok: false, error: 'no_connected_account', message: `No connected ${platform} account for this brand.` });
-      continue;
-    }
-
-    // Platform adapter dispatch — none implemented yet.
-    // When adapters exist they must return ok:true ONLY after platform confirms.
+    // Real adapter dispatch — resolves OAuth tokens (oauthStore), refreshes
+    // expired tokens, uploads the video file, and confirms with the platform.
+    const outcome = await publishToPlatform(post, wsData, platform);
     results.push({
       platform,
-      accountId: account.id,
-      ok: false,
-      error: 'adapter_missing',
-      message: `Publishing to ${platform} is not yet implemented — connect the platform adapter.`,
+      ok: outcome.ok,
+      uncertain: outcome.uncertain,
+      platformPostId: outcome.platformPostId,
+      url: outcome.url,
+      providerStatus: outcome.providerStatus,
+      error: outcome.error,
+      message: outcome.message,
     });
   }
 

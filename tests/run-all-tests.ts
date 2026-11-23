@@ -275,16 +275,19 @@ async function main() {
     assert(cycleResult.ran === true, 'Scheduler cycle must execute successfully');
 
     // Verify post transitioned through the real publishing engine.
-    // With no platform adapters configured, the honest outcome is 'failed'
-    // with adapter_missing — NOT fabricated 'published'.
+    // With no OAuth accounts/tokens in the test env, the honest outcome is
+    // 'failed' (no_connected_account → unknown_outcome / adapter_missing) —
+    // NOT fabricated 'published'.
     const refreshedData = getWorkspaceData(tenantAWorkspaceId);
     const post = refreshedData.posts.find((p: any) => p.id === 'test_sched_post_1');
     assert(['publishing', 'failed', 'published'].includes(post.status), `Post must transition to a terminal/in-flight status, got ${post.status}`);
     assert(post.status !== 'scheduled', 'Post must leave scheduled state after engine claim');
     assert((post.publishingEvents || []).length > 0, 'Engine must record pipeline events');
     if (post.status === 'failed') {
-      assert(post.lastPublishError?.class === 'adapter_missing', 'Failure must be classified as adapter_missing');
-      assert(!post.nextRetryAt, 'Non-retryable adapter_missing must not schedule a retry');
+      // Real adapters exist now; without OAuth credentials the honest classes
+      // are no_connected_account (unknown_outcome) or adapter_missing.
+      assert(['adapter_missing', 'unknown_outcome', 'auth_expired'].includes(post.lastPublishError?.class), `Failure must be honestly classified, got ${post.lastPublishError?.class}`);
+      assert(!post.nextRetryAt, 'Non-retryable failure must not schedule a retry');
     }
     // Negative isolation check: post must not leak to Tenant B
     const tenantBData = getWorkspaceData(tenantBWorkspaceId);
