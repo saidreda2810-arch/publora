@@ -10,6 +10,12 @@ const rid = (prefix: string) => `${prefix}_${crypto.randomBytes(8).toString('hex
 const hashToken = (t: string) => crypto.createHash('sha256').update(t).digest('hex');
 const byLegacy = (col: string, id: string) => `(${id}=$1 OR ${col}=$2)`;
 
+// provider enum: youtube|facebook|instagram|tiktok|google_drive|other (0013).
+// Workspace-state payloads can carry platforms outside the enum — map them
+// to 'other' instead of failing the whole save with 22P02.
+const PROVIDER_ENUM = new Set(['youtube', 'facebook', 'instagram', 'tiktok', 'google_drive', 'other']);
+const toProvider = (p: any): string => (p && PROVIDER_ENUM.has(p) ? p : 'other');
+
 const uRow = (r: any) => r && ({
   id: r.legacy_id || r.id, email: r.email, fullName: r.full_name,
   avatarUrl: r.avatar_url, role: r.role, isEmailVerified: r.is_email_verified,
@@ -142,7 +148,7 @@ export function createPgRepos(): SaasRepos {
           for (const a of (data as any).accounts || []) {
             await c.query(`INSERT INTO social_accounts(legacy_id,workspace_id,brand_id,provider,platform_account_id,account_name,handle,avatar_url,status,metadata,created_at,updated_at)
               VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now(),now()) ON CONFLICT DO NOTHING`,
-              [a.id || a.legacyId, ws.id, await resolveFk('brands', a.brandId), a.provider || 'unknown', a.externalAccountId || a.id || null, a.accountName || a.name || '', a.usernameOrHandle || a.handle || null, a.avatarUrl || null, a.connectionStatus || a.status || 'disconnected', JSON.stringify(a)]);
+              [a.id || a.legacyId, ws.id, await resolveFk('brands', a.brandId), toProvider(a.provider || a.platform), a.externalAccountId || a.id || null, a.accountName || a.name || '', a.usernameOrHandle || a.handle || null, a.avatarUrl || null, a.connectionStatus || a.status || 'disconnected', JSON.stringify(a)]);
           }
         }
         if ((data as any).videos !== undefined) {
@@ -171,7 +177,7 @@ export function createPgRepos(): SaasRepos {
               const accUuid = await resolveFk('social_accounts', (typeof plat === 'object' ? plat?.accountId : null) || p.accounts?.[platId]);
               await c.query(`INSERT INTO post_targets(legacy_id,post_id,workspace_id,social_account_id,platform,status,scheduled_at,payload,created_at,updated_at)
                 VALUES($1,$2,$3,$4,$5,$6,$7,$8,now(),now()) ON CONFLICT DO NOTHING`,
-                [`${p.id || p.legacyId}_${platId}`, postUuid, ws.id, accUuid, platId, p.status === 'published' ? 'published' : (p.status === 'failed' ? 'failed' : 'scheduled'), tsOrNull(p.scheduledTime || p.scheduledAt), JSON.stringify(p)]);
+                [`${p.id || p.legacyId}_${platId}`, postUuid, ws.id, accUuid, toProvider(platId), p.status === 'published' ? 'published' : (p.status === 'failed' ? 'failed' : 'scheduled'), tsOrNull(p.scheduledTime || p.scheduledAt), JSON.stringify(p)]);
             }
           }
         }
