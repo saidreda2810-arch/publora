@@ -246,6 +246,27 @@ async function persistPostResultPg(workspaceLegacyId: string, post: any) {
       [workspaceLegacyId, post.id, JSON.stringify(events)],
     );
   }
+  // Notify workspace members on terminal outcomes (published/failed).
+  const lastStage = events.length ? events[events.length - 1]?.stage : null;
+  if (lastStage === 'completed' || lastStage === 'failed') {
+    const type = lastStage === 'completed' ? 'post_published' : 'post_failed';
+    const title = lastStage === 'completed' ? 'Post published' : 'Post failed to publish';
+    const body = `${post.title || 'Untitled post'} — ${lastStage === 'completed' ? 'published successfully' : (post.lastPublishError?.message || 'publishing failed')}`;
+    await query(
+      `INSERT INTO notifications(user_id, workspace_id, type, title, body, payload)
+       SELECT m.user_id, w.id, $2, $3, $4, $5::jsonb
+       FROM workspace_members m JOIN workspaces w ON w.id = m.workspace_id
+       WHERE w.legacy_id=$1 AND m.status='active'
+         AND NOT EXISTS (
+           SELECT 1 FROM notifications n
+           WHERE n.user_id=m.user_id AND n.type=$2
+             AND n.payload->>'postId'=$6
+             AND n.created_at > now() - interval '1 hour'
+         )`,
+      [workspaceLegacyId, type, title, body,
+       JSON.stringify({ postId: post.id, postTitle: post.title, stage: lastStage }), post.id],
+    ).catch((e) => console.warn('[scheduler] notification insert failed:', e?.message || e));
+  }
 }
 
 async function runPgSchedulerCycle(): Promise<{ publishedInThisCycle: number }> {
