@@ -262,39 +262,39 @@ function queueStatusPayload(wsData: any) {
   };
 }
 
-saasRouter.get('/queue/status', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/queue/status', async (req: AuthenticatedRequest, res: Response) => {
   const workspaceId = req.workspace?.id;
   if (!workspaceId) return res.status(400).json({ success: false, error: 'No active workspace selected.' });
-  res.json({ success: true, ...queueStatusPayload(getWorkspaceData(workspaceId)) });
+  res.json({ success: true, ...queueStatusPayload(await stateGet(workspaceId)) });
 });
 
-saasRouter.post('/queue/pause', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.post('/queue/pause', async (req: AuthenticatedRequest, res: Response) => {
   const workspaceId = req.workspace?.id;
   if (!workspaceId) return res.status(400).json({ success: false, error: 'No active workspace selected.' });
-  const wsData = getWorkspaceData(workspaceId);
+  const wsData = await stateGet(workspaceId);
   const status = queueStatusPayload(wsData);
   if (status.activeJobs > 0 && req.body?.confirmActive !== true) {
     return res.status(409).json({ success: false, needsConfirm: true, activeJobs: status.activeJobs, error: `${status.activeJobs} job(s) currently publishing — pausing will not interrupt them.` });
   }
-  saveWorkspaceData(workspaceId, { ...(wsData as any), queuePaused: true } as any);
+  await stateSave(workspaceId, { ...(wsData as any), queuePaused: true } as any);
   logAuditEvent({ workspaceId, userId: req.user!.id, userEmail: req.user!.email, action: 'queue_paused', details: 'Publishing queue paused by user' });
-  res.json({ success: true, ...queueStatusPayload(getWorkspaceData(workspaceId)), message: 'Queue paused — no new jobs will start. Running jobs continue.' });
+  res.json({ success: true, ...queueStatusPayload(await stateGet(workspaceId)), message: 'Queue paused — no new jobs will start. Running jobs continue.' });
 });
 
-saasRouter.post('/queue/resume', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.post('/queue/resume', async (req: AuthenticatedRequest, res: Response) => {
   const workspaceId = req.workspace?.id;
   if (!workspaceId) return res.status(400).json({ success: false, error: 'No active workspace selected.' });
-  const wsData = getWorkspaceData(workspaceId);
-  saveWorkspaceData(workspaceId, { ...(wsData as any), queuePaused: false } as any);
+  const wsData = await stateGet(workspaceId);
+  await stateSave(workspaceId, { ...(wsData as any), queuePaused: false } as any);
   logAuditEvent({ workspaceId, userId: req.user!.id, userEmail: req.user!.email, action: 'queue_resumed', details: 'Publishing queue resumed by user' });
-  res.json({ success: true, ...queueStatusPayload(getWorkspaceData(workspaceId)), message: 'Queue resumed.' });
+  res.json({ success: true, ...queueStatusPayload(await stateGet(workspaceId)), message: 'Queue resumed.' });
 });
 
 // Queue analytics — real metrics computed from workspace post records
-saasRouter.get('/queue/analytics', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/queue/analytics', async (req: AuthenticatedRequest, res: Response) => {
   const workspaceId = req.workspace?.id;
   if (!workspaceId) return res.status(400).json({ success: false, error: 'No active workspace selected.' });
-  const wsData = getWorkspaceData(workspaceId);
+  const wsData = await stateGet(workspaceId);
   const posts: any[] = Array.isArray(wsData?.posts) ? wsData.posts : [];
   const days = Math.min(365, Math.max(1, parseInt(String(req.query.days || '30'), 10) || 30));
   const since = Date.now() - days * 86400_000;
@@ -351,10 +351,10 @@ saasRouter.get('/queue/analytics', (req: AuthenticatedRequest, res: Response) =>
 });
 
 // Smart scheduling — best publish windows from real published-post history
-saasRouter.get('/queue/best-times', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/queue/best-times', async (req: AuthenticatedRequest, res: Response) => {
   const workspaceId = req.workspace?.id;
   if (!workspaceId) return res.status(400).json({ success: false, error: 'No active workspace selected.' });
-  const wsData = getWorkspaceData(workspaceId);
+  const wsData = await stateGet(workspaceId);
   const posts: any[] = Array.isArray(wsData?.posts) ? wsData.posts : [];
   const published = posts.filter((p) => p.status === 'published' && p.scheduledTime && p.publishedAt);
 
@@ -391,10 +391,10 @@ saasRouter.get('/queue/best-times', (req: AuthenticatedRequest, res: Response) =
 });
 
 // In-app publishing notifications — derived from real post events (last 50)
-saasRouter.get('/queue/notifications', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/queue/notifications', async (req: AuthenticatedRequest, res: Response) => {
   const workspaceId = req.workspace?.id;
   if (!workspaceId) return res.status(400).json({ success: false, error: 'No active workspace selected.' });
-  const wsData = getWorkspaceData(workspaceId);
+  const wsData = await stateGet(workspaceId);
   const posts: any[] = Array.isArray(wsData?.posts) ? wsData.posts : [];
 
   const events: any[] = [];
@@ -418,10 +418,10 @@ saasRouter.get('/queue/notifications', (req: AuthenticatedRequest, res: Response
 
 // GET /api/saas/history — workspace-scoped publishing history with server-side
 // filtering, sorting, and pagination. Joins posts with analytics records.
-saasRouter.get('/history', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/history', async (req: AuthenticatedRequest, res: Response) => {
   const wsId = req.workspace?.id;
   if (!wsId) return res.status(400).json({ success: false, error: 'Workspace required' });
-  const data = getWorkspaceData(wsId);
+  const data = await stateGet(wsId);
 
   const { days, brandId, platform, status, accountId, q, sort = 'date_desc', page = '1', pageSize = '25', from, to } = req.query as Record<string, string>;
 
@@ -481,17 +481,17 @@ saasRouter.get('/history', (req: AuthenticatedRequest, res: Response) => {
 
 // GET /api/saas/history/analytics — workspace-scoped synced analytics joined
 // with post/video/brand context for the performance dashboard.
-saasRouter.get('/history/analytics', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/history/analytics', async (req: AuthenticatedRequest, res: Response) => {
   const wsId = req.workspace?.id;
   if (!wsId) return res.status(400).json({ success: false, error: 'Workspace required' });
-  const data = getWorkspaceData(wsId);
+  const data = await stateGet(wsId);
   const { days = '30', brandId, platform } = req.query as Record<string, string>;
   const daysNum = Math.min(Math.max(parseInt(days, 10) || 30, 1), 3650);
   const since = Date.now() - daysNum * 86400e3;
 
-  const postById = new Map((data.posts || []).map((p: any) => [p.id, p]));
-  const videoById = new Map((data.videos || []).map((v: any) => [v.id, v]));
-  const brandById = new Map((data.brands || []).map((b: any) => [b.id, b]));
+  const postById = new Map<string, any>((data.posts || []).map((p: any) => [p.id, p]));
+  const videoById = new Map<string, any>((data.videos || []).map((v: any) => [v.id, v]));
+  const brandById = new Map<string, any>((data.brands || []).map((b: any) => [b.id, b]));
 
   const items = (data.analytics || [])
     .map((a: any) => {
@@ -559,16 +559,16 @@ function brandDependencyCounts(wsData: any, brandId: string) {
   };
 }
 
-saasRouter.get('/brands', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/brands', async (req: AuthenticatedRequest, res: Response) => {
   const wsId = req.workspace?.id;
   if (!wsId) return res.status(400).json({ success: false, error: 'Workspace required' });
-  const data = getWorkspaceData(wsId);
+  const data = await stateGet(wsId);
   // Brand-level access: open brands (no members) visible to all workspace members
   const brands = (data.brands || []).filter((b: any) => canAccessBrand(req, b, 0).ok);
   res.json({ success: true, brands });
 });
 
-saasRouter.post('/brands', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.post('/brands', async (req: AuthenticatedRequest, res: Response) => {
   const wsId = req.workspace?.id;
   if (!wsId) return res.status(400).json({ success: false, error: 'Workspace required' });
   const { name, ...rest } = req.body || {};
@@ -577,7 +577,7 @@ saasRouter.post('/brands', (req: AuthenticatedRequest, res: Response) => {
   if (mediaViolations.length > 0) {
     return res.status(400).json({ success: false, code: MEDIA_INGRESS_ERROR_CODE, error: `Media must be uploaded via the media API, not embedded: ${mediaViolations.slice(0, 3).join('; ')}` });
   }
-  const data = getWorkspaceData(wsId);
+  const data = await stateGet(wsId);
   const brands = data.brands || [];
   if (brands.some((b: any) => b.name.toLowerCase() === String(name).trim().toLowerCase())) {
     return res.status(409).json({ success: false, error: 'A brand with this name already exists in this workspace' });
@@ -591,14 +591,14 @@ saasRouter.post('/brands', (req: AuthenticatedRequest, res: Response) => {
     updatedAt: new Date().toISOString(),
     ...rest,
   };
-  saveWorkspaceData(wsId, { ...data, brands: [...brands, brand] });
+  await stateSave(wsId, { ...data, brands: [...brands, brand] });
   res.json({ success: true, brand });
 });
 
-saasRouter.patch('/brands/:id', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.patch('/brands/:id', async (req: AuthenticatedRequest, res: Response) => {
   const wsId = req.workspace?.id;
   if (!wsId) return res.status(400).json({ success: false, error: 'Workspace required' });
-  const data = getWorkspaceData(wsId);
+  const data = await stateGet(wsId);
   const brands = data.brands || [];
   const idx = brands.findIndex((b: any) => b.id === req.params.id);
   if (idx === -1) return res.status(404).json({ success: false, error: 'Brand not found' });
@@ -621,16 +621,16 @@ saasRouter.patch('/brands/:id', (req: AuthenticatedRequest, res: Response) => {
   }
   const updated = { ...brands[idx], ...rest, ...(members !== undefined ? { members } : {}), id: brands[idx].id, updatedAt: new Date().toISOString() };
   brands[idx] = updated;
-  saveWorkspaceData(wsId, { ...data, brands });
+  await stateSave(wsId, { ...data, brands });
   logAuditEvent({ workspaceId: wsId, userId: req.user!.id, userEmail: req.user!.email, action: 'brand_updated', details: `Brand "${updated.name}" updated${members !== undefined ? ' (members changed)' : ''}` });
   res.json({ success: true, brand: updated });
 });
 
 // Delete with dependency check — prefers archive when dependencies exist
-saasRouter.delete('/brands/:id', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.delete('/brands/:id', async (req: AuthenticatedRequest, res: Response) => {
   const wsId = req.workspace?.id;
   if (!wsId) return res.status(400).json({ success: false, error: 'Workspace required' });
-  const data = getWorkspaceData(wsId);
+  const data = await stateGet(wsId);
   const brands = data.brands || [];
   const idx = brands.findIndex((b: any) => b.id === req.params.id);
   if (idx === -1) return res.status(404).json({ success: false, error: 'Brand not found' });
@@ -648,7 +648,7 @@ saasRouter.delete('/brands/:id', (req: AuthenticatedRequest, res: Response) => {
   }
   const deletedName = brands[idx].name;
   brands.splice(idx, 1);
-  saveWorkspaceData(wsId, { ...data, brands });
+  await stateSave(wsId, { ...data, brands });
   logAuditEvent({ workspaceId: wsId, userId: req.user!.id, userEmail: req.user!.email, action: 'brand_deleted', details: `Brand "${deletedName}" deleted` });
   res.json({ success: true, message: 'Brand deleted', removedDependencies: deps });
 });
@@ -659,22 +659,22 @@ function validateProjectBrand(wsData: any, brandId: string): boolean {
   return (wsData.brands || []).some((b: any) => b.id === brandId);
 }
 
-saasRouter.get('/projects', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/projects', async (req: AuthenticatedRequest, res: Response) => {
   const wsId = req.workspace?.id;
   if (!wsId) return res.status(400).json({ success: false, error: 'Workspace required' });
   const { brandId } = req.query as Record<string, string>;
-  let projects = getWorkspaceData(wsId).projects || [];
+  let projects = (await stateGet(wsId)).projects || [];
   if (brandId) projects = projects.filter((p: any) => p.brandId === brandId);
   res.json({ success: true, projects });
 });
 
-saasRouter.post('/projects', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.post('/projects', async (req: AuthenticatedRequest, res: Response) => {
   const wsId = req.workspace?.id;
   if (!wsId) return res.status(400).json({ success: false, error: 'Workspace required' });
   const { name, brandId, ...rest } = req.body || {};
   if (!name || !String(name).trim()) return res.status(400).json({ success: false, error: 'Project name is required' });
   if (!brandId) return res.status(400).json({ success: false, error: 'brandId is required' });
-  const data = getWorkspaceData(wsId);
+  const data = await stateGet(wsId);
   if (!validateProjectBrand(data, brandId)) {
     return res.status(403).json({ success: false, error: 'Brand not found in this workspace' });
   }
@@ -687,14 +687,14 @@ saasRouter.post('/projects', (req: AuthenticatedRequest, res: Response) => {
     updatedAt: new Date().toISOString(),
     ...rest,
   };
-  saveWorkspaceData(wsId, { ...data, projects: [...(data.projects || []), project] });
+  await stateSave(wsId, { ...data, projects: [...(data.projects || []), project] });
   res.json({ success: true, project });
 });
 
-saasRouter.patch('/projects/:id', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.patch('/projects/:id', async (req: AuthenticatedRequest, res: Response) => {
   const wsId = req.workspace?.id;
   if (!wsId) return res.status(400).json({ success: false, error: 'Workspace required' });
-  const data = getWorkspaceData(wsId);
+  const data = await stateGet(wsId);
   const projects = data.projects || [];
   const idx = projects.findIndex((p: any) => p.id === req.params.id);
   if (idx === -1) return res.status(404).json({ success: false, error: 'Project not found' });
@@ -703,14 +703,14 @@ saasRouter.patch('/projects/:id', (req: AuthenticatedRequest, res: Response) => 
     return res.status(403).json({ success: false, error: 'Brand not found in this workspace' });
   }
   projects[idx] = { ...projects[idx], ...rest, ...(brandId ? { brandId } : {}), id: projects[idx].id, updatedAt: new Date().toISOString() };
-  saveWorkspaceData(wsId, { ...data, projects });
+  await stateSave(wsId, { ...data, projects });
   res.json({ success: true, project: projects[idx] });
 });
 
-saasRouter.delete('/projects/:id', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.delete('/projects/:id', async (req: AuthenticatedRequest, res: Response) => {
   const wsId = req.workspace?.id;
   if (!wsId) return res.status(400).json({ success: false, error: 'Workspace required' });
-  const data = getWorkspaceData(wsId);
+  const data = await stateGet(wsId);
   const projects = data.projects || [];
   const idx = projects.findIndex((p: any) => p.id === req.params.id);
   if (idx === -1) return res.status(404).json({ success: false, error: 'Project not found' });
@@ -719,12 +719,12 @@ saasRouter.delete('/projects/:id', (req: AuthenticatedRequest, res: Response) =>
     return res.status(409).json({ success: false, error: 'Project has associated videos', dependencies: { videos: videoCount }, suggestion: 'Archive instead, or force=true' });
   }
   projects.splice(idx, 1);
-  saveWorkspaceData(wsId, { ...data, projects });
+  await stateSave(wsId, { ...data, projects });
   res.json({ success: true, message: 'Project deleted' });
 });
 
 // 3. CREATE NEW WORKSPACE
-saasRouter.post('/workspace', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.post('/workspace', async (req: AuthenticatedRequest, res: Response) => {
   const { name } = req.body;
   const user = req.user!;
 
@@ -751,7 +751,7 @@ saasRouter.post('/workspace', (req: AuthenticatedRequest, res: Response) => {
 });
 
 // 4. UPDATE WORKSPACE SETTINGS / ONBOARDING
-saasRouter.put('/workspace/:id', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.put('/workspace/:id', async (req: AuthenticatedRequest, res: Response) => {
   const workspaceId = req.params.id;
   const user = req.user!;
   const db = getDb();
@@ -798,7 +798,7 @@ saasRouter.put('/workspace/:id', (req: AuthenticatedRequest, res: Response) => {
 });
 
 // 5. GET WORKSPACE MEMBERS
-saasRouter.get('/members', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/members', async (req: AuthenticatedRequest, res: Response) => {
   const workspaceId = req.workspace?.id;
   if (!workspaceId) {
     return res.status(400).json({ success: false, error: 'No workspace context.' });
@@ -884,7 +884,7 @@ saasRouter.post('/members/invite', async (req: AuthenticatedRequest, res: Respon
 
 // 7. UPGRADE SUBSCRIPTION — GOD-only until a real payment provider (Stripe)
 // is integrated. Self-serve plan changes would bypass billing entirely.
-saasRouter.post('/subscription/upgrade', requireGodOwner, (req: AuthenticatedRequest, res: Response) => {
+saasRouter.post('/subscription/upgrade', requireGodOwner, async (req: AuthenticatedRequest, res: Response) => {
   const workspaceId = req.workspace?.id;
   const { plan, billingCycle = 'monthly' } = req.body as { plan: PlanTier; billingCycle: BillingCycle };
 
@@ -1025,7 +1025,7 @@ saasRouter.get('/admin/users', requireRole(['god', 'super_admin', 'platform_admi
 });
 
 // 10. TOGGLE USER STATUS (SUSPEND / REACTIVATE)
-saasRouter.put('/admin/users/:id/status', requireGodOwner, (req: AuthenticatedRequest, res: Response) => {
+saasRouter.put('/admin/users/:id/status', requireGodOwner, async (req: AuthenticatedRequest, res: Response) => {
   const targetId = req.params.id;
   const { status } = req.body;
   const caller = req.user!;
@@ -1077,7 +1077,7 @@ saasRouter.put('/admin/users/:id/status', requireGodOwner, (req: AuthenticatedRe
 });
 
 // 11. CHANGE USER ROLE (RBAC WITH GOD & SUPER ADMIN RESTRICTIONS)
-saasRouter.put('/admin/users/:id/role', requireGodOwner, (req: AuthenticatedRequest, res: Response) => {
+saasRouter.put('/admin/users/:id/role', requireGodOwner, async (req: AuthenticatedRequest, res: Response) => {
   const targetId = req.params.id;
   const { role } = req.body as { role: UserRole };
   const caller = req.user!;
@@ -1142,7 +1142,7 @@ saasRouter.put('/admin/users/:id/role', requireGodOwner, (req: AuthenticatedRequ
   res.json({ success: true, message: `User role updated to ${role}.`, user: sanitizeUserForClient(updated!) });
 });
 
-saasRouter.delete('/admin/users/:id/sessions', requireGodOwner, (req: AuthenticatedRequest, res: Response) => {
+saasRouter.delete('/admin/users/:id/sessions', requireGodOwner, async (req: AuthenticatedRequest, res: Response) => {
   const targetId = req.params.id;
   const caller = req.user!;
   const db = getDb();
@@ -1163,7 +1163,7 @@ saasRouter.delete('/admin/users/:id/sessions', requireGodOwner, (req: Authentica
 });
 
 // 12. DELETE USER ACCOUNT (ADMIN / GOD INITIATED)
-saasRouter.delete('/admin/users/:id', requireGodOwner, (req: AuthenticatedRequest, res: Response) => {
+saasRouter.delete('/admin/users/:id', requireGodOwner, async (req: AuthenticatedRequest, res: Response) => {
   const targetId = req.params.id;
   const caller = req.user!;
   const db = getDb();
@@ -1230,7 +1230,7 @@ saasRouter.put('/admin/system-settings', requireRole(['god', 'super_admin', 'pla
 });
 
 // 14. ANNOUNCEMENT MANAGEMENT
-saasRouter.post('/admin/announcements', requireGodOwner, (req: AuthenticatedRequest, res: Response) => {
+saasRouter.post('/admin/announcements', requireGodOwner, async (req: AuthenticatedRequest, res: Response) => {
   const { title, message, type = 'info' } = req.body;
   const caller = req.user!;
 
@@ -1257,7 +1257,7 @@ saasRouter.post('/admin/announcements', requireGodOwner, (req: AuthenticatedRequ
   res.status(201).json({ success: true, announcement: ann });
 });
 
-saasRouter.delete('/admin/announcements/:id', requireGodOwner, (req: AuthenticatedRequest, res: Response) => {
+saasRouter.delete('/admin/announcements/:id', requireGodOwner, async (req: AuthenticatedRequest, res: Response) => {
   const annId = req.params.id;
   const caller = req.user!;
 
@@ -1334,7 +1334,7 @@ saasRouter.get('/admin/audit-logs', requireRole(['god', 'super_admin', 'platform
 });
 
 // GOD-only audit export (JSON download)
-saasRouter.get('/admin/audit-logs/export', requireGodOwner, (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/admin/audit-logs/export', requireGodOwner, async (req: AuthenticatedRequest, res: Response) => {
   const { action, from, to } = req.query;
   let logs = getAuditLogs({ limit: 5000 });
   if (action) logs = logs.filter((l: any) => l.action === action);
@@ -1432,9 +1432,9 @@ saasRouter.get('/admin/storage-details', requireRole(['god', 'super_admin', 'pla
 // Helper: social accounts scoped to the caller's active workspace brands.
 // OAuth records are keyed by brandId; workspace isolation is enforced here,
 // never trusted from the client.
-function getScopedSocialAccounts(workspaceId: string | undefined) {
+async function getScopedSocialAccounts(workspaceId: string | undefined) {
   if (!workspaceId) return { accounts: [] as any[], brandIds: new Set<string>() };
-  const wsData = getWorkspaceData(workspaceId);
+  const wsData = await stateGet(workspaceId);
   const brands = wsData.brands || [];
   const brandIds = new Set<string>(brands.map((b: any) => b.id).filter(Boolean));
   const accounts = getAllAccounts()
@@ -1461,13 +1461,13 @@ function oauthProviderStatus() {
 }
 
 // 19. ACCOUNT OVERVIEW (real aggregated account data for the profile page)
-saasRouter.get('/account-overview', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/account-overview', async (req: AuthenticatedRequest, res: Response) => {
   const user = req.user!;
   const workspace = req.workspace;
   const db = getDb();
 
-  const wsData = workspace ? getWorkspaceData(workspace.id) : null;
-  const { accounts: socialAccounts } = getScopedSocialAccounts(workspace?.id);
+  const wsData = workspace ? await stateGet(workspace.id) : null;
+  const { accounts: socialAccounts } = await getScopedSocialAccounts(workspace?.id);
 
   const memberRole = getMemberRole(user.id, workspace?.id);
   const memberRecord = workspace
@@ -1513,15 +1513,15 @@ saasRouter.get('/account-overview', (req: AuthenticatedRequest, res: Response) =
 });
 
 // 20. SCOPED SOCIAL ACCOUNTS (workspace-isolated; tokens never exposed)
-saasRouter.get('/social-accounts', (req: AuthenticatedRequest, res: Response) => {
-  const { accounts } = getScopedSocialAccounts(req.workspace?.id);
+saasRouter.get('/social-accounts', async (req: AuthenticatedRequest, res: Response) => {
+  const { accounts } = await getScopedSocialAccounts(req.workspace?.id);
   res.json({ success: true, accounts, oauthProviders: oauthProviderStatus() });
 });
 
 // 21. DISCONNECT SCOPED SOCIAL ACCOUNT (ownership verified server-side)
 saasRouter.delete('/social-accounts/:id', async (req: AuthenticatedRequest, res: Response) => {
   const accountId = req.params.id;
-  const { accounts, brandIds } = getScopedSocialAccounts(req.workspace?.id);
+  const { accounts, brandIds } = await getScopedSocialAccounts(req.workspace?.id);
   const account = accounts.find((a: any) => a.id === accountId);
 
   if (!account || !brandIds.has(account.brandId)) {
@@ -1579,10 +1579,10 @@ saasRouter.delete('/account', async (req: AuthenticatedRequest, res: Response) =
       .filter((m) => m.userId === user.id && m.role === 'owner')
       .map((m) => m.workspaceId);
     const brandIds = new Set<string>();
-    ownedWorkspaceIds.forEach((wsId) => {
-      const wsData = getWorkspaceData(wsId);
+    for (const wsId of ownedWorkspaceIds) {
+      const wsData = await stateGet(wsId);
       (wsData.brands || []).forEach((b: any) => b.id && brandIds.add(b.id));
-    });
+    }
     for (const acc of getAllAccounts()) {
       if (brandIds.has(acc.brandId)) {
         const token = decryptToken(acc.accessTokenEncrypted || '');
@@ -1616,20 +1616,20 @@ saasRouter.delete('/account', async (req: AuthenticatedRequest, res: Response) =
 
 const validWorkflowStatus = new Set(['draft', 'active', 'paused', 'disabled', 'archived']);
 
-saasRouter.get('/automations/workflows', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/automations/workflows', async (req: AuthenticatedRequest, res: Response) => {
   const wsId = req.workspace?.id;
   if (!wsId) return res.status(400).json({ success: false, error: 'Workspace required' });
-  const data = getWorkspaceData(wsId);
+  const data = await stateGet(wsId);
   res.json({ success: true, workflows: data.automationWorkflows || [] });
 });
 
-saasRouter.post('/automations/workflows', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.post('/automations/workflows', async (req: AuthenticatedRequest, res: Response) => {
   const wsId = req.workspace?.id;
   if (!wsId) return res.status(400).json({ success: false, error: 'Workspace required' });
   const { name, description, brandId, projectId, trigger, steps, status } = req.body || {};
   if (!name || !String(name).trim()) return res.status(400).json({ success: false, error: 'Workflow name is required' });
   if (status && !validWorkflowStatus.has(status)) return res.status(400).json({ success: false, error: 'Invalid status' });
-  const data = getWorkspaceData(wsId);
+  const data = await stateGet(wsId);
   const workflows = data.automationWorkflows || [];
   const wf = {
     id: `wf_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
@@ -1647,14 +1647,14 @@ saasRouter.post('/automations/workflows', (req: AuthenticatedRequest, res: Respo
     lastExecutionAt: null,
     lastExecutionStatus: null,
   };
-  saveWorkspaceData(wsId, { ...data, automationWorkflows: [...workflows, wf] });
+  await stateSave(wsId, { ...data, automationWorkflows: [...workflows, wf] });
   res.json({ success: true, workflow: wf });
 });
 
-saasRouter.patch('/automations/workflows/:id', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.patch('/automations/workflows/:id', async (req: AuthenticatedRequest, res: Response) => {
   const wsId = req.workspace?.id;
   if (!wsId) return res.status(400).json({ success: false, error: 'Workspace required' });
-  const data = getWorkspaceData(wsId);
+  const data = await stateGet(wsId);
   const workflows = data.automationWorkflows || [];
   const idx = workflows.findIndex((w: any) => w.id === req.params.id);
   if (idx === -1) return res.status(404).json({ success: false, error: 'Workflow not found' });
@@ -1675,27 +1675,27 @@ saasRouter.patch('/automations/workflows/:id', (req: AuthenticatedRequest, res: 
   if (trigger !== undefined || steps !== undefined) updated.version = (workflows[idx].version || 1) + 1;
   const next = [...workflows];
   next[idx] = updated;
-  saveWorkspaceData(wsId, { ...data, automationWorkflows: next });
+  await stateSave(wsId, { ...data, automationWorkflows: next });
   res.json({ success: true, workflow: updated });
 });
 
-saasRouter.delete('/automations/workflows/:id', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.delete('/automations/workflows/:id', async (req: AuthenticatedRequest, res: Response) => {
   const wsId = req.workspace?.id;
   if (!wsId) return res.status(400).json({ success: false, error: 'Workspace required' });
-  const data = getWorkspaceData(wsId);
+  const data = await stateGet(wsId);
   const workflows = data.automationWorkflows || [];
   const idx = workflows.findIndex((w: any) => w.id === req.params.id);
   if (idx === -1) return res.status(404).json({ success: false, error: 'Workflow not found' });
   const next = [...workflows];
   next.splice(idx, 1);
-  saveWorkspaceData(wsId, { ...data, automationWorkflows: next });
+  await stateSave(wsId, { ...data, automationWorkflows: next });
   res.json({ success: true });
 });
 
-saasRouter.post('/automations/workflows/:id/duplicate', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.post('/automations/workflows/:id/duplicate', async (req: AuthenticatedRequest, res: Response) => {
   const wsId = req.workspace?.id;
   if (!wsId) return res.status(400).json({ success: false, error: 'Workspace required' });
-  const data = getWorkspaceData(wsId);
+  const data = await stateGet(wsId);
   const workflows = data.automationWorkflows || [];
   const src = workflows.find((w: any) => w.id === req.params.id);
   if (!src) return res.status(404).json({ success: false, error: 'Workflow not found' });
@@ -1709,14 +1709,14 @@ saasRouter.post('/automations/workflows/:id/duplicate', (req: AuthenticatedReque
     lastExecutionAt: null,
     lastExecutionStatus: null,
   };
-  saveWorkspaceData(wsId, { ...data, automationWorkflows: [...workflows, copy] });
+  await stateSave(wsId, { ...data, automationWorkflows: [...workflows, copy] });
   res.json({ success: true, workflow: copy });
 });
 
-saasRouter.get('/automations/executions', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/automations/executions', async (req: AuthenticatedRequest, res: Response) => {
   const wsId = req.workspace?.id;
   if (!wsId) return res.status(400).json({ success: false, error: 'Workspace required' });
-  const data = getWorkspaceData(wsId);
+  const data = await stateGet(wsId);
   const { workflowId, status, limit } = req.query;
   let execs = data.automationExecutions || [];
   if (workflowId) execs = execs.filter((e: any) => e.workflowId === workflowId);
@@ -1726,12 +1726,12 @@ saasRouter.get('/automations/executions', (req: AuthenticatedRequest, res: Respo
   res.json({ success: true, executions: execs.slice(0, lim) });
 });
 
-saasRouter.post('/automations/executions', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.post('/automations/executions', async (req: AuthenticatedRequest, res: Response) => {
   const wsId = req.workspace?.id;
   if (!wsId) return res.status(400).json({ success: false, error: 'Workspace required' });
   const { workflowId, workflowVersion, triggerEvent, status, steps } = req.body || {};
   if (!workflowId) return res.status(400).json({ success: false, error: 'workflowId required' });
-  const data = getWorkspaceData(wsId);
+  const data = await stateGet(wsId);
   const exec = {
     id: `ex_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
     workflowId,
@@ -1745,7 +1745,7 @@ saasRouter.post('/automations/executions', (req: AuthenticatedRequest, res: Resp
     error: null,
   };
   const execs = data.automationExecutions || [];
-  saveWorkspaceData(wsId, { ...data, automationExecutions: [...execs, exec] });
+  await stateSave(wsId, { ...data, automationExecutions: [...execs, exec] });
   res.json({ success: true, execution: exec });
 });
 
@@ -1783,10 +1783,10 @@ saasRouter.post('/automations/approvals/:id/resolve', async (req: AuthenticatedR
   res.json({ success: true, approval: approvals[idx] });
 });
 
-saasRouter.get('/automations/analytics', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/automations/analytics', async (req: AuthenticatedRequest, res: Response) => {
   const wsId = req.workspace?.id;
   if (!wsId) return res.status(400).json({ success: false, error: 'Workspace required' });
-  const data = getWorkspaceData(wsId);
+  const data = await stateGet(wsId);
   const execs = data.automationExecutions || [];
   const now = Date.now();
   const day = 86400000;
@@ -1805,7 +1805,7 @@ saasRouter.get('/automations/analytics', (req: AuthenticatedRequest, res: Respon
 });
 
 // ---- Invitations: list, revoke, accept ----
-saasRouter.get('/members/invitations', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/members/invitations', async (req: AuthenticatedRequest, res: Response) => {
   const workspaceId = req.workspace?.id;
   if (!workspaceId) return res.status(400).json({ success: false, error: 'Workspace required' });
   const db = getDb();
@@ -1815,7 +1815,7 @@ saasRouter.get('/members/invitations', (req: AuthenticatedRequest, res: Response
   res.json({ success: true, invitations: invs });
 });
 
-saasRouter.post('/members/invitations/:id/revoke', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.post('/members/invitations/:id/revoke', async (req: AuthenticatedRequest, res: Response) => {
   const workspaceId = req.workspace?.id;
   if (!workspaceId) return res.status(400).json({ success: false, error: 'Workspace required' });
   const inviterRole = getMemberRole(req.user?.id || '', workspaceId);
@@ -1868,7 +1868,7 @@ saasRouter.post('/members/invitations/accept', async (req: AuthenticatedRequest,
 });
 
 // ---- Member management: role change, suspend, remove ----
-saasRouter.patch('/members/:id', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.patch('/members/:id', async (req: AuthenticatedRequest, res: Response) => {
   const workspaceId = req.workspace?.id;
   if (!workspaceId) return res.status(400).json({ success: false, error: 'Workspace required' });
   const actorRole = getMemberRole(req.user?.id || '', workspaceId);
@@ -1899,7 +1899,7 @@ saasRouter.patch('/members/:id', (req: AuthenticatedRequest, res: Response) => {
   res.json({ success: true, member });
 });
 
-saasRouter.delete('/members/:id', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.delete('/members/:id', async (req: AuthenticatedRequest, res: Response) => {
   const workspaceId = req.workspace?.id;
   if (!workspaceId) return res.status(400).json({ success: false, error: 'Workspace required' });
   const actorRole = getMemberRole(req.user?.id || '', workspaceId);
@@ -1921,7 +1921,7 @@ saasRouter.delete('/members/:id', (req: AuthenticatedRequest, res: Response) => 
 });
 
 // ---- Ownership transfer ----
-saasRouter.post('/workspaces/transfer-ownership', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.post('/workspaces/transfer-ownership', async (req: AuthenticatedRequest, res: Response) => {
   const workspaceId = req.workspace?.id;
   if (!workspaceId) return res.status(400).json({ success: false, error: 'Workspace required' });
   const actorRole = getMemberRole(req.user?.id || '', workspaceId);
@@ -1947,36 +1947,36 @@ saasRouter.post('/workspaces/transfer-ownership', (req: AuthenticatedRequest, re
 });
 
 // ---- Custom roles + suspend/reactivate + audit ----
-saasRouter.get('/roles', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/roles', async (req: AuthenticatedRequest, res: Response) => {
   const wsId = req.workspace?.id;
   if (!wsId) return res.status(400).json({ success: false, error: 'Workspace required' });
-  const data = getWorkspaceData(wsId);
+  const data = await stateGet(wsId);
   const builtins = ['owner','manager','editor','publisher','analyst','viewer'].map((r) => ({ id: r, name: r, builtin: true }));
   res.json({ success: true, roles: [...builtins, ...(data.customRoles || [])] });
 });
 
-saasRouter.post('/roles', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.post('/roles', async (req: AuthenticatedRequest, res: Response) => {
   const wsId = req.workspace?.id;
   if (!wsId) return res.status(400).json({ success: false, error: 'Workspace required' });
   const actorRole = getMemberRole(req.user?.id || '', wsId);
   if (!hasWorkspacePermission(actorRole, 'manage_team')) return res.status(403).json({ success: false, error: 'No permission' });
   const { name, description, baseRole } = req.body || {};
   if (!name || !String(name).trim()) return res.status(400).json({ success: false, error: 'Role name required' });
-  const data = getWorkspaceData(wsId);
+  const data = await stateGet(wsId);
   const roles = data.customRoles || [];
   if (roles.length >= 10) return res.status(400).json({ success: false, error: 'Custom role limit reached (10)' });
   const role = { id: `role_${Date.now().toString(36)}`, name: String(name).trim(), description: description || '', baseRole: baseRole || 'viewer', builtin: false, createdAt: new Date().toISOString() };
   data.customRoles = [...roles, role];
-  saveWorkspaceData(wsId, data);
+  await stateSave(wsId, data);
   res.json({ success: true, role });
 });
 
-saasRouter.delete('/roles/:id', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.delete('/roles/:id', async (req: AuthenticatedRequest, res: Response) => {
   const wsId = req.workspace?.id;
   if (!wsId) return res.status(400).json({ success: false, error: 'Workspace required' });
   const actorRole = getMemberRole(req.user?.id || '', wsId);
   if (!hasWorkspacePermission(actorRole, 'manage_team')) return res.status(403).json({ success: false, error: 'No permission' });
-  const data = getWorkspaceData(wsId);
+  const data = await stateGet(wsId);
   const roles = data.customRoles || [];
   const idx = roles.findIndex((r: any) => r.id === req.params.id);
   if (idx === -1) return res.status(404).json({ success: false, error: 'Role not found' });
@@ -1985,11 +1985,11 @@ saasRouter.delete('/roles/:id', (req: AuthenticatedRequest, res: Response) => {
   const inUse = db.workspaceMembers.some((m: any) => m.workspaceId === wsId && (m as any).customRoleId === req.params.id);
   if (inUse) return res.status(400).json({ success: false, error: 'Role is assigned to members — reassign first' });
   data.customRoles = roles.filter((_: any, i: number) => i !== idx);
-  saveWorkspaceData(wsId, data);
+  await stateSave(wsId, data);
   res.json({ success: true });
 });
 
-saasRouter.get('/audit-logs', (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/audit-logs', async (req: AuthenticatedRequest, res: Response) => {
   const wsId = req.workspace?.id;
   if (!wsId) return res.status(400).json({ success: false, error: 'Workspace required' });
   const actorRole = getMemberRole(req.user?.id || '', wsId);
@@ -2001,7 +2001,7 @@ saasRouter.get('/audit-logs', (req: AuthenticatedRequest, res: Response) => {
 });
 
 // ---- Security Center overview (GOD-only) ----
-saasRouter.get('/admin/security/overview', requireGodOwner, (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/admin/security/overview', requireGodOwner, async (req: AuthenticatedRequest, res: Response) => {
   const db = getDb();
   const now = Date.now();
   const activeSessions = db.sessions.filter((s) => new Date(s.expiresAt).getTime() > now);
@@ -2057,7 +2057,7 @@ saasRouter.get('/admin/security/overview', requireGodOwner, (req: AuthenticatedR
 });
 
 // ---- Infrastructure monitoring (GOD-only): real storage + DB + honest backup status ----
-saasRouter.get('/admin/infrastructure', requireGodOwner, (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/admin/infrastructure', requireGodOwner, async (req: AuthenticatedRequest, res: Response) => {
   const storage = getStorageStats();
   const dataDir = path.resolve(process.cwd(), 'data');
   const dbFile = path.join(dataDir, 'saas_db.json');
@@ -2135,7 +2135,7 @@ saasRouter.post('/admin/scheduler/resume', requireGodOwner, async (req: Authenti
 
 // ---- Privacy Shield: verifiable control report (GOD-only) ----
 // Each control reports REAL implementation status — no universal "active" claim.
-saasRouter.get('/admin/privacy-shield', requireGodOwner, (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/admin/privacy-shield', requireGodOwner, async (req: AuthenticatedRequest, res: Response) => {
   const db = getDb();
   const controls = [
     {
@@ -2228,7 +2228,7 @@ saasRouter.get('/admin/privacy-shield', requireGodOwner, (req: AuthenticatedRequ
 // ---- Self-service account lifecycle (Phase 1) ----
 
 // Deactivate account — suspends access, preserves data, reversible by admin
-saasRouter.post('/account/deactivate', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+saasRouter.post('/account/deactivate', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const user = req.user!;
   if (user.email.toLowerCase() === GOD_OWNER_EMAIL.toLowerCase()) {
     return res.status(403).json({ success: false, error: 'The Primary Owner account cannot be deactivated.' });
@@ -2251,7 +2251,7 @@ saasRouter.post('/account/deactivate', requireAuth, (req: AuthenticatedRequest, 
 });
 
 // Delete account — checks workspace ownership before allowing
-saasRouter.post('/account/delete-request', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+saasRouter.post('/account/delete-request', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const user = req.user!;
   if (user.email.toLowerCase() === GOD_OWNER_EMAIL.toLowerCase()) {
     return res.status(403).json({ success: false, error: 'The Primary Owner account cannot be deleted.' });
@@ -2289,7 +2289,7 @@ saasRouter.post('/account/delete-request', requireAuth, (req: AuthenticatedReque
 
 // Avatar reference — accepts a media URL/path from the media upload API.
 // data: URLs are rejected (WP1): upload via POST /api/media/upload first.
-saasRouter.post('/account/avatar', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+saasRouter.post('/account/avatar', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const user = req.user!;
   const { avatarUrl } = req.body || {};
   if (!avatarUrl || typeof avatarUrl !== 'string') return res.status(400).json({ success: false, error: 'avatarUrl required' });
@@ -2305,12 +2305,12 @@ saasRouter.post('/account/avatar', requireAuth, (req: AuthenticatedRequest, res:
 });
 
 // ---- Maintenance Center config (GOD-only) ----
-saasRouter.get('/admin/maintenance', requireGodOwner, (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/admin/maintenance', requireGodOwner, async (req: AuthenticatedRequest, res: Response) => {
   const settings = getSystemSettings();
   res.json({ success: true, maintenance: settings.maintenanceConfig || { mode: 'normal' }, legacyMode: settings.maintenanceMode });
 });
 
-saasRouter.put('/admin/maintenance', requireGodOwner, (req: AuthenticatedRequest, res: Response) => {
+saasRouter.put('/admin/maintenance', requireGodOwner, async (req: AuthenticatedRequest, res: Response) => {
   const { mode, reason, publicTitle, publicMessage, affectedServices, scheduledStart, scheduledEnd, autoExpire, confirm } = req.body || {};
   const validModes = ['normal', 'readonly', 'partial', 'full', 'emergency'];
   if (mode && !validModes.includes(mode)) return res.status(400).json({ success: false, error: 'Invalid mode' });
@@ -2393,11 +2393,11 @@ function ensureBackupDir() { if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP
 function loadBackupIndex(): any[] { try { return JSON.parse(fs.readFileSync(BACKUP_INDEX, 'utf8')); } catch { return []; } }
 function saveBackupIndex(idx: any[]) { ensureBackupDir(); fs.writeFileSync(BACKUP_INDEX, JSON.stringify(idx, null, 2)); }
 
-saasRouter.get('/admin/backups', requireGodOwner, (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/admin/backups', requireGodOwner, async (req: AuthenticatedRequest, res: Response) => {
   res.json({ success: true, backups: loadBackupIndex().slice(-50).reverse() });
 });
 
-saasRouter.post('/admin/backups', requireGodOwner, (req: AuthenticatedRequest, res: Response) => {
+saasRouter.post('/admin/backups', requireGodOwner, async (req: AuthenticatedRequest, res: Response) => {
   const dbFile = path.join(process.cwd(), 'data', 'saas_db.json');
   if (!fs.existsSync(dbFile)) return res.status(500).json({ success: false, error: 'Database file not found' });
   ensureBackupDir();
@@ -2419,7 +2419,7 @@ saasRouter.post('/admin/backups', requireGodOwner, (req: AuthenticatedRequest, r
   }
 });
 
-saasRouter.post('/admin/backups/:id/verify', requireGodOwner, (req: AuthenticatedRequest, res: Response) => {
+saasRouter.post('/admin/backups/:id/verify', requireGodOwner, async (req: AuthenticatedRequest, res: Response) => {
   const idx = loadBackupIndex();
   const rec = idx.find((b: any) => b.id === req.params.id);
   if (!rec) return res.status(404).json({ success: false, error: 'Backup not found' });
@@ -2487,7 +2487,7 @@ const TASK_DEFS: Record<string, { title: string; desc: string; run: () => Promis
   },
 };
 
-saasRouter.get('/admin/maintenance-tasks', requireGodOwner, (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/admin/maintenance-tasks', requireGodOwner, async (req: AuthenticatedRequest, res: Response) => {
   res.json({
     success: true,
     definitions: Object.entries(TASK_DEFS).map(([key, t]) => ({ key, title: t.title, desc: t.desc })),
@@ -2514,7 +2514,7 @@ saasRouter.post('/admin/maintenance-tasks/:key/run', requireGodOwner, async (req
 });
 
 // ---- Maintenance audit history (GOD-only) ----
-saasRouter.get('/admin/maintenance-history', requireGodOwner, (req: AuthenticatedRequest, res: Response) => {
+saasRouter.get('/admin/maintenance-history', requireGodOwner, async (req: AuthenticatedRequest, res: Response) => {
   const { action, from, to, limit } = req.query;
   const MAINT_ACTIONS = ['maintenance_config_changed','maintenance_task_run','backup_created','scheduler_paused','scheduler_resumed','god_access_denied','system_settings_updated'];
   let logs = getAuditLogs({ limit: 1000 }).filter((l: any) => MAINT_ACTIONS.includes(l.action) || (action && l.action === action));
@@ -2541,7 +2541,7 @@ saasRouter.get('/admin/recovery', requireGodOwner, async (req: AuthenticatedRequ
 });
 
 // Rollback to previous maintenance configuration
-saasRouter.post('/admin/recovery/rollback', requireGodOwner, (req: AuthenticatedRequest, res: Response) => {
+saasRouter.post('/admin/recovery/rollback', requireGodOwner, async (req: AuthenticatedRequest, res: Response) => {
   const { confirm } = req.body || {};
   if (confirm !== true) return res.status(400).json({ success: false, error: 'confirm: true required' });
   const settings = getSystemSettings();
