@@ -286,7 +286,7 @@ async function main() {
     if (post.status === 'failed') {
       // Real adapters exist now; without OAuth credentials the honest classes
       // are no_connected_account (unknown_outcome) or adapter_missing.
-      assert(['adapter_missing', 'unknown_outcome', 'auth_expired'].includes(post.lastPublishError?.class), `Failure must be honestly classified, got ${post.lastPublishError?.class}`);
+      assert(['adapter_missing', 'unknown_outcome', 'auth_expired', 'precondition_failed'].includes(post.lastPublishError?.class), `Failure must be honestly classified, got ${post.lastPublishError?.class}`);
       assert(!post.nextRetryAt, 'Non-retryable failure must not schedule a retry');
     }
     // Negative isolation check: post must not leak to Tenant B

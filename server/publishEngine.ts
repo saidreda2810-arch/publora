@@ -29,6 +29,7 @@ export type ErrorClass =
   | 'permission'
   | 'permanent_rejection'
   | 'unknown_outcome'
+  | 'precondition_failed'
   | 'adapter_missing';
 
 const MAX_RETRIES = 5;
@@ -46,6 +47,9 @@ export function classifyError(err: any): { cls: ErrorClass; retryable: boolean; 
   const msg = String(err?.message || err || '').toLowerCase();
   if (msg.includes('adapter_missing') || msg.includes('not implemented') || msg.includes('not yet implemented')) {
     return { cls: 'adapter_missing', retryable: false, userMessage: 'Publishing adapter for this platform is not connected yet.' };
+  }
+  if (msg.includes('no_connected_account') || msg.includes('no connected') || msg.includes('media_not_found') || msg.includes('no_channel') || msg.includes('no eligible') || msg.includes('not found in storage')) {
+    return { cls: 'precondition_failed', retryable: false, userMessage: 'Publishing prerequisites missing — connect the social account or attach the video, then retry.' };
   }
   if (msg.includes('token') || msg.includes('expired') || msg.includes('unauthorized') || msg.includes('401') || msg.includes('reconnect')) {
     return { cls: 'auth_expired', retryable: false, userMessage: 'Social account connection expired — reconnect the account before publishing.' };
