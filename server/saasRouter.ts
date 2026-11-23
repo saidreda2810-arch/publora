@@ -64,6 +64,16 @@ async function stateSave(workspaceId: string, data: any, baseVersion?: number): 
   return true;
 }
 
+/** Save or reply 409 — prevents silent stale-write drops on CAS conflict. */
+async function saveOrConflict(workspaceId: string, data: any, res: Response): Promise<boolean> {
+  const ok = await stateSave(workspaceId, data);
+  if (!ok) {
+    res.status(409).json({ success: false, error: 'Workspace state changed concurrently — reload and retry.' });
+    return false;
+  }
+  return true;
+}
+
 export const saasRouter = express.Router();
 
 // Enforce authentication on all SaaS workspace endpoints
@@ -268,7 +278,7 @@ saasRouter.post('/queue/pause', async (req: AuthenticatedRequest, res: Response)
   if (status.activeJobs > 0 && req.body?.confirmActive !== true) {
     return res.status(409).json({ success: false, needsConfirm: true, activeJobs: status.activeJobs, error: `${status.activeJobs} job(s) currently publishing — pausing will not interrupt them.` });
   }
-  await stateSave(workspaceId, { ...(wsData as any), queuePaused: true } as any);
+  if (!await saveOrConflict(workspaceId, { ...(wsData as any), queuePaused: true } as any, res)) return;
   await authStore.logAudit({ workspaceId, userId: req.user!.id, userEmail: req.user!.email, action: 'queue_paused', details: 'Publishing queue paused by user' });
   res.json({ success: true, ...queueStatusPayload(await stateGet(workspaceId)), message: 'Queue paused — no new jobs will start. Running jobs continue.' });
 });
@@ -277,7 +287,7 @@ saasRouter.post('/queue/resume', async (req: AuthenticatedRequest, res: Response
   const workspaceId = req.workspace?.id;
   if (!workspaceId) return res.status(400).json({ success: false, error: 'No active workspace selected.' });
   const wsData = await stateGet(workspaceId);
-  await stateSave(workspaceId, { ...(wsData as any), queuePaused: false } as any);
+  if (!await saveOrConflict(workspaceId, { ...(wsData as any), queuePaused: false } as any, res)) return;
   await authStore.logAudit({ workspaceId, userId: req.user!.id, userEmail: req.user!.email, action: 'queue_resumed', details: 'Publishing queue resumed by user' });
   res.json({ success: true, ...queueStatusPayload(await stateGet(workspaceId)), message: 'Queue resumed.' });
 });
@@ -583,7 +593,7 @@ saasRouter.post('/brands', async (req: AuthenticatedRequest, res: Response) => {
     updatedAt: new Date().toISOString(),
     ...rest,
   };
-  await stateSave(wsId, { ...data, brands: [...brands, brand] });
+  if (!await saveOrConflict(wsId, { ...data, brands: [...brands, brand] }, res)) return;
   res.json({ success: true, brand });
 });
 
@@ -613,7 +623,7 @@ saasRouter.patch('/brands/:id', async (req: AuthenticatedRequest, res: Response)
   }
   const updated = { ...brands[idx], ...rest, ...(members !== undefined ? { members } : {}), id: brands[idx].id, updatedAt: new Date().toISOString() };
   brands[idx] = updated;
-  await stateSave(wsId, { ...data, brands });
+  if (!await saveOrConflict(wsId, { ...data, brands }, res)) return;
   await authStore.logAudit({ workspaceId: wsId, userId: req.user!.id, userEmail: req.user!.email, action: 'brand_updated', details: `Brand "${updated.name}" updated${members !== undefined ? ' (members changed)' : ''}` });
   res.json({ success: true, brand: updated });
 });
@@ -640,7 +650,7 @@ saasRouter.delete('/brands/:id', async (req: AuthenticatedRequest, res: Response
   }
   const deletedName = brands[idx].name;
   brands.splice(idx, 1);
-  await stateSave(wsId, { ...data, brands });
+  if (!await saveOrConflict(wsId, { ...data, brands }, res)) return;
   await authStore.logAudit({ workspaceId: wsId, userId: req.user!.id, userEmail: req.user!.email, action: 'brand_deleted', details: `Brand "${deletedName}" deleted` });
   res.json({ success: true, message: 'Brand deleted', removedDependencies: deps });
 });
@@ -679,7 +689,7 @@ saasRouter.post('/projects', async (req: AuthenticatedRequest, res: Response) =>
     updatedAt: new Date().toISOString(),
     ...rest,
   };
-  await stateSave(wsId, { ...data, projects: [...(data.projects || []), project] });
+  if (!await saveOrConflict(wsId, { ...data, projects: [...(data.projects || []), project] }, res)) return;
   res.json({ success: true, project });
 });
 
@@ -695,7 +705,7 @@ saasRouter.patch('/projects/:id', async (req: AuthenticatedRequest, res: Respons
     return res.status(403).json({ success: false, error: 'Brand not found in this workspace' });
   }
   projects[idx] = { ...projects[idx], ...rest, ...(brandId ? { brandId } : {}), id: projects[idx].id, updatedAt: new Date().toISOString() };
-  await stateSave(wsId, { ...data, projects });
+  if (!await saveOrConflict(wsId, { ...data, projects }, res)) return;
   res.json({ success: true, project: projects[idx] });
 });
 
@@ -711,7 +721,7 @@ saasRouter.delete('/projects/:id', async (req: AuthenticatedRequest, res: Respon
     return res.status(409).json({ success: false, error: 'Project has associated videos', dependencies: { videos: videoCount }, suggestion: 'Archive instead, or force=true' });
   }
   projects.splice(idx, 1);
-  await stateSave(wsId, { ...data, projects });
+  if (!await saveOrConflict(wsId, { ...data, projects }, res)) return;
   res.json({ success: true, message: 'Project deleted' });
 });
 
@@ -1633,7 +1643,7 @@ saasRouter.post('/automations/workflows', async (req: AuthenticatedRequest, res:
     lastExecutionAt: null,
     lastExecutionStatus: null,
   };
-  await stateSave(wsId, { ...data, automationWorkflows: [...workflows, wf] });
+  if (!await saveOrConflict(wsId, { ...data, automationWorkflows: [...workflows, wf] }, res)) return;
   res.json({ success: true, workflow: wf });
 });
 
@@ -1661,7 +1671,7 @@ saasRouter.patch('/automations/workflows/:id', async (req: AuthenticatedRequest,
   if (trigger !== undefined || steps !== undefined) updated.version = (workflows[idx].version || 1) + 1;
   const next = [...workflows];
   next[idx] = updated;
-  await stateSave(wsId, { ...data, automationWorkflows: next });
+  if (!await saveOrConflict(wsId, { ...data, automationWorkflows: next }, res)) return;
   res.json({ success: true, workflow: updated });
 });
 
@@ -1674,7 +1684,7 @@ saasRouter.delete('/automations/workflows/:id', async (req: AuthenticatedRequest
   if (idx === -1) return res.status(404).json({ success: false, error: 'Workflow not found' });
   const next = [...workflows];
   next.splice(idx, 1);
-  await stateSave(wsId, { ...data, automationWorkflows: next });
+  if (!await saveOrConflict(wsId, { ...data, automationWorkflows: next }, res)) return;
   res.json({ success: true });
 });
 
@@ -1695,7 +1705,7 @@ saasRouter.post('/automations/workflows/:id/duplicate', async (req: Authenticate
     lastExecutionAt: null,
     lastExecutionStatus: null,
   };
-  await stateSave(wsId, { ...data, automationWorkflows: [...workflows, copy] });
+  if (!await saveOrConflict(wsId, { ...data, automationWorkflows: [...workflows, copy] }, res)) return;
   res.json({ success: true, workflow: copy });
 });
 
@@ -1731,7 +1741,7 @@ saasRouter.post('/automations/executions', async (req: AuthenticatedRequest, res
     error: null,
   };
   const execs = data.automationExecutions || [];
-  await stateSave(wsId, { ...data, automationExecutions: [...execs, exec] });
+  if (!await saveOrConflict(wsId, { ...data, automationExecutions: [...execs, exec] }, res)) return;
   res.json({ success: true, execution: exec });
 });
 
@@ -1940,7 +1950,7 @@ saasRouter.post('/roles', async (req: AuthenticatedRequest, res: Response) => {
   if (roles.length >= 10) return res.status(400).json({ success: false, error: 'Custom role limit reached (10)' });
   const role = { id: `role_${Date.now().toString(36)}`, name: String(name).trim(), description: description || '', baseRole: baseRole || 'viewer', builtin: false, createdAt: new Date().toISOString() };
   data.customRoles = [...roles, role];
-  await stateSave(wsId, data);
+  if (!await saveOrConflict(wsId, data, res)) return;
   res.json({ success: true, role });
 });
 
@@ -1957,7 +1967,7 @@ saasRouter.delete('/roles/:id', async (req: AuthenticatedRequest, res: Response)
   const inUse = (await authStore.listWorkspaceMemberRecords(wsId)).some((m: any) => (m as any).customRoleId === req.params.id);
   if (inUse) return res.status(400).json({ success: false, error: 'Role is assigned to members — reassign first' });
   data.customRoles = roles.filter((_: any, i: number) => i !== idx);
-  await stateSave(wsId, data);
+  if (!await saveOrConflict(wsId, data, res)) return;
   res.json({ success: true });
 });
 
