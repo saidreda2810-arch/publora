@@ -8,6 +8,7 @@ import {
   ArrowUpDown, Eye, Heart, MessageCircle, Share2, AlertTriangle, BarChart3, ShieldAlert, Sparkles, Bell,
 } from 'lucide-react';
 import { ScheduledPost, Platform } from '../types';
+import { PlatformVideosSection } from './PlatformVideosSection';
 
 const STATUS_STYLE: Record<string, { label: string; cls: string }> = {
   draft: { label: 'Draft', cls: 'text-[var(--text-secondary)] border-slate-500/40 bg-slate-500/10' },
@@ -262,6 +263,9 @@ export const ReportsView: React.FC<{ setActiveTab?: (t: string) => void }> = ({ 
 
       {/* Performance analytics — real synced VideoAnalytics only */}
       <AnalyticsPanel days={daysParam || 30} brandId={fBrand} platform={fPlatform} />
+
+      {/* Live mirror of videos already published on connected platforms */}
+      <PlatformVideosSection mode="published" title="Published on your platforms" />
 
       {/* Detail modal — Phase 3 will expand with full audit timeline */}
       {detail && <HistoryDetail post={detail} video={videos.find((v) => v.id === detail.videoId)} brand={brands.find((b) => b.id === detail.brandId)} accounts={accounts} onClose={() => setDetailId(null)} />}

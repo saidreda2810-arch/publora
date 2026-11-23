@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { ScheduledPost, Platform } from '../types';
 import { apiFetch } from '../lib/api';
+import { PlatformVideosSection } from './PlatformVideosSection';
 
 type Priority = 'urgent' | 'high' | 'normal' | 'low';
 const PRIORITIES: Priority[] = ['urgent', 'high', 'normal', 'low'];
@@ -450,6 +451,9 @@ export const PublishingQueueView: React.FC<{ onOpenNewPost: () => void }> = ({ o
       ) : (
         <TimelineView posts={filtered} videos={videos} brands={brands} onOpen={setDetailId} />
       )}
+
+      {/* Videos scheduled directly on connected platforms (read-only mirror) */}
+      <PlatformVideosSection mode="scheduled" title="Scheduled on your platforms" />
 
       {/* Reschedule dialog */}
       {reschedFor && (

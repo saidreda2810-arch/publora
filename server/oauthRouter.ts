@@ -1210,6 +1210,20 @@ oauthRouter.post('/accounts/:id/select-channels', requireAuth, async (req: Authe
   });
 });
 
+// 6b. Platform content — videos already scheduled/published ON the provider
+// (read-only mirror; NOT internal queue posts). Powers Queue/History/Calendar.
+oauthRouter.get('/accounts/:id/platform-videos', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const account = getAccountById(req.params.id);
+  if (!account || !(await accountInWorkspace(account, req))) {
+    return res.status(404).json({ success: false, error: 'Account not found.' });
+  }
+  const status = (['all', 'scheduled', 'published'] as const).includes(req.query.status as any)
+    ? (req.query.status as 'all' | 'scheduled' | 'published') : 'all';
+  const { listPlatformVideos } = await import('./platformContent.ts');
+  const result = await listPlatformVideos(account, { status });
+  res.json({ success: result.ok || result.unsupported, ...result });
+});
+
 // 6c. Platform capability report — derived from ACTUAL granted permissions,
 // channel eligibility, and provider-specific rules. Never assumes capabilities.
 oauthRouter.get('/accounts/:id/capabilities', requireAuth, async (req: AuthenticatedRequest, res: Response) => {

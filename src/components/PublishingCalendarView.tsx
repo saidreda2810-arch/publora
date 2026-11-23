@@ -3,6 +3,7 @@ import { usePublisher } from '../context/PublisherContext';
 import { useAuth } from '../context/AuthContext';
 import { ScheduledPost, Platform, PostStatus, CalendarSettings } from '../types';
 import { apiFetch } from '../lib/api';
+import { PlatformVideosSection } from './PlatformVideosSection';
 import {
   ChevronLeft, ChevronRight, PlusCircle, Film, Clock, CheckCircle2,
   XCircle, AlertTriangle, CalendarDays, List, Rows3, CalendarRange,
@@ -458,6 +459,9 @@ export const PublishingCalendarView: React.FC<{ onOpenNewPost: () => void; onSch
       ) : (
         <AgendaView posts={filteredPosts} videos={videos} brands={brands} campaigns={campaigns} contentIdeas={contentIdeas} milestones={campaigns.flatMap((c) => (c.milestones || []).map((m) => ({ ...m, campaign: c })))} tz={tz} onOpen={setDetailId} />
       )}
+
+      {/* Live mirror of content scheduled/published on connected platforms */}
+      <PlatformVideosSection mode="all" title="On your platforms" emptyText="Nothing scheduled or published on connected accounts yet." />
 
       {/* Day popover */}
       {dayPopover && (
