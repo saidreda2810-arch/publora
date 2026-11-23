@@ -228,6 +228,24 @@ async function persistPostResultPg(workspaceLegacyId: string, post: any) {
      WHERE t.post_id=p.id AND p.workspace_id=w.id AND w.legacy_id=$1 AND p.legacy_id=$2`,
     [workspaceLegacyId, post.id, targetStatus, JSON.stringify(post)],
   );
+  // Mirror publishingEvents into post_events (deduped by stage+ts) so the
+  // lifecycle is queryable per-post, not only inside the settings blob.
+  const events = Array.isArray(post.publishingEvents) ? post.publishingEvents : [];
+  if (events.length) {
+    await query(
+      `INSERT INTO post_events(post_id, type, payload)
+       SELECT p.id, e->>'stage', e
+       FROM posts p,
+            jsonb_array_elements($3::jsonb) e
+       WHERE p.workspace_id=(SELECT id FROM workspaces WHERE legacy_id=$1)
+         AND p.legacy_id=$2
+         AND NOT EXISTS (
+           SELECT 1 FROM post_events pe
+           WHERE pe.post_id=p.id AND pe.type=e->>'stage' AND pe.payload->>'ts'=e->>'ts'
+         )`,
+      [workspaceLegacyId, post.id, JSON.stringify(events)],
+    );
+  }
 }
 
 async function runPgSchedulerCycle(): Promise<{ publishedInThisCycle: number }> {
