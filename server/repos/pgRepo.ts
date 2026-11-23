@@ -116,5 +116,102 @@ export function createPgRepos(): SaasRepos {
       consume: async (id) => { await query('UPDATE auth_tokens SET used_at=now() WHERE id=$1', [id]); },
       purgeExpired: async () => (await query(`DELETE FROM auth_tokens WHERE expires_at < now() - interval '7 days'`)).rowCount ?? 0,
     },
+    ...pgEntities(),
+  };
+}
+
+async function wsUuid(workspaceId: string): Promise<string | null> {
+  const r = await query(`SELECT id FROM workspaces WHERE ${byLegacy('id::text', 'legacy_id')}`, [workspaceId, workspaceId]);
+  return r.rows[0]?.id ?? null;
+}
+
+/** Generic table-backed entity repo. `map` translates camelCase fields to columns. */
+function pgEntity(table: string, map: Record<string, string>, jsonCol = 'settings'): any {
+  return {
+    list: async (workspaceId: string, filter: Record<string, any> = {}) => {
+      const ws = await wsUuid(workspaceId); if (!ws) return [];
+      const cond = [`workspace_id=$1`]; const vals: any[] = [ws]; let i = 2;
+      for (const [k, col] of Object.entries(map)) if (filter[k] !== undefined) { cond.push(`${col}=$${i++}`); vals.push(filter[k]); }
+      return (await query(`SELECT * FROM ${table} WHERE ${cond.join(' AND ')} ORDER BY created_at DESC`, vals)).rows;
+    },
+    findById: async (workspaceId: string, id: string) => {
+      const ws = await wsUuid(workspaceId); if (!ws) return undefined;
+      return (await query(`SELECT * FROM ${table} WHERE workspace_id=$1 AND (legacy_id=$2 OR id::text=$2)`, [ws, id])).rows[0];
+    },
+    create: async (workspaceId: string, data: any) => {
+      const ws = await wsUuid(workspaceId); if (!ws) throw new Error('workspace not found');
+      const legacyId = data.legacyId || data.id || rid('ent');
+      const cols = ['legacy_id', 'workspace_id', 'status', 'created_at', 'updated_at', jsonCol];
+      const vals: any[] = [legacyId, ws, data.status || 'active', new Date().toISOString(), new Date().toISOString(), JSON.stringify(data)];
+      let sql = `INSERT INTO ${table}(${cols.join(',')}`;
+      for (const [k, col] of Object.entries(map)) {
+        if (data[k] !== undefined) { sql += `,${col}`; vals.push(typeof data[k] === 'object' ? JSON.stringify(data[k]) : data[k]); }
+      }
+      sql += `) VALUES(${cols.map((_, i2) => `$${i2 + 1}`).join(',')}`;
+      let p = cols.length + 1;
+      for (const [k, col] of Object.entries(map)) if (data[k] !== undefined) sql += `,$${p++}`;
+      sql += ') RETURNING *';
+      return (await query(sql, vals)).rows[0];
+    },
+    update: async (workspaceId: string, id: string, updates: any) => {
+      const ws = await wsUuid(workspaceId); if (!ws) return undefined;
+      const sets: string[] = [`updated_at=now()`]; const vals: any[] = [ws, id]; let i = 3;
+      for (const [k, col] of Object.entries(map)) if (updates[k] !== undefined) { sets.push(`${col}=$${i++}`); vals.push(typeof updates[k] === 'object' ? JSON.stringify(updates[k]) : updates[k]); }
+      if (updates.status !== undefined) { sets.push(`status=$${i++}`); vals.push(updates.status); }
+      if (Object.keys(updates).length) await query(`UPDATE ${table} SET ${sets.join(',')} WHERE workspace_id=$1 AND (legacy_id=$2 OR id::text=$2)`, vals);
+      return (await query(`SELECT * FROM ${table} WHERE workspace_id=$1 AND (legacy_id=$2 OR id::text=$2)`, [ws, id])).rows[0];
+    },
+    remove: async (workspaceId: string, id: string) => {
+      const ws = await wsUuid(workspaceId); if (!ws) return false;
+      const r = await query(`DELETE FROM ${table} WHERE workspace_id=$1 AND (legacy_id=$2 OR id::text=$2)`, [ws, id]);
+      return (r.rowCount ?? 0) > 0;
+    },
+  };
+}
+
+function pgEntities() {
+  return {
+    brands: pgEntity('brands', { name: 'name', description: 'description', logoUrl: 'logo_url', website: 'website' }),
+    projects: pgEntity('projects', { name: 'name', description: 'description', brandId: 'brand_id' }),
+    videos: pgEntity('videos', { title: 'title', description: 'description', brandId: 'brand_id', projectId: 'project_id', durationSec: 'duration_sec', fileSizeBytes: 'file_size_bytes', thumbnailUrl: 'thumbnail_url' }, 'metadata'),
+    socialAccounts: pgEntity('social_accounts', { provider: 'provider', platformAccountId: 'platform_account_id', accountName: 'account_name', handle: 'handle', avatarUrl: 'avatar_url' }, 'metadata'),
+    mediaAssets: pgEntity('media_assets', { originalName: 'original_name', mime: 'mime', storageKey: 'storage_key', sha256: 'sha256', sizeBytes: 'size_bytes', kind: 'kind', width: 'width', height: 'height', durationSec: 'duration_sec', brandId: 'brand_id' }),
+    posts: {
+      ...pgEntity('posts', { title: 'title', caption: 'caption', brandId: 'brand_id', projectId: 'project_id', videoId: 'video_id', scheduledAt: 'scheduled_at', timezone: 'timezone' }),
+      targets: {
+        listForPost: async (workspaceId: string, postId: string) => {
+          const ws = await wsUuid(workspaceId); if (!ws) return [];
+          const p = (await query(`SELECT id FROM posts WHERE workspace_id=$1 AND (legacy_id=$2 OR id::text=$2)`, [ws, postId])).rows[0];
+          if (!p) return [];
+          return (await query('SELECT * FROM post_targets WHERE post_id=$1 ORDER BY created_at', [p.id])).rows;
+        },
+        claimDue: async (workerId: string, limit: number) => withTransaction(async (c) => {
+          const r = await c.query(`UPDATE post_targets SET locked_by=$1, locked_at=now(), attempt_count=attempt_count+1
+            WHERE id IN (SELECT id FROM post_targets WHERE status='scheduled' AND scheduled_at<=now()
+              AND (locked_at IS NULL OR locked_at < now() - interval '15 minutes')
+              ORDER BY scheduled_at LIMIT $2 FOR UPDATE SKIP LOCKED)
+            RETURNING *`, [workerId, limit]);
+          return r.rows;
+        }),
+        markResult: async (id: string, patch: any) => {
+          const sets: string[] = []; const vals: any[] = [id]; let i = 2;
+          const map: Record<string, string> = { status: 'status', externalId: 'external_id', externalUrl: 'external_url', errorCode: 'error_code', errorMessage: 'error_message', nextRetryAt: 'next_retry_at' };
+          for (const [k, col] of Object.entries(map)) if (patch[k] !== undefined) { sets.push(`${col}=$${i++}`); vals.push(patch[k]); }
+          if (patch.status === 'published' || patch.status === 'failed') sets.push('locked_by=NULL', 'locked_at=NULL');
+          if (sets.length) await query(`UPDATE post_targets SET ${sets.join(',')},updated_at=now() WHERE id=$1`, vals);
+        },
+      },
+    },
+    notifications: {
+      listForUser: async (userId: string, unreadOnly = false) => {
+        const u = (await query(`SELECT id FROM users WHERE ${byLegacy('id::text', 'legacy_id')}`, [userId, userId])).rows[0];
+        if (!u) return [];
+        return (await query(`SELECT * FROM notifications WHERE user_id=$1 ${unreadOnly ? 'AND read_at IS NULL' : ''} ORDER BY created_at DESC LIMIT 100`, [u.id])).rows;
+      },
+      markRead: async (id: string, userId: string) => {
+        const u = (await query(`SELECT id FROM users WHERE ${byLegacy('id::text', 'legacy_id')}`, [userId, userId])).rows[0];
+        if (u) await query('UPDATE notifications SET read_at=now() WHERE id=$1 AND user_id=$2', [id, u.id]);
+      },
+    },
   };
 }

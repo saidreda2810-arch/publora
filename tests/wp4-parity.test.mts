@@ -38,4 +38,18 @@ await t('authTokens create/find/consume pg', async()=>{
   assert.ok(f2); await g.authTokens.consume((rec as any).id);
   assert.equal(await g.authTokens.findValid('magic_link',h),undefined);
 });
+await t('brands CRUD parity json+pg', async()=>{
+  const j=createJsonRepos(), g=createPgRepos();
+  const {query}=await import('../server/db/client.ts');
+  const wid=(await import('../server/saasDb.ts')).getDb().workspaces[0].id;
+  const jb=await j.brands.create(wid,{name:'ParityBrand',status:'active'});
+  assert.ok(await j.brands.findById(wid,jb.id));
+  const pgwid=(await query('SELECT legacy_id FROM workspaces WHERE legacy_id IS NOT NULL LIMIT 1')).rows[0].legacy_id;
+  const gb=await g.brands.create(pgwid,{name:'ParityBrandPg',status:'active'});
+  assert.ok((await g.brands.list(pgwid)).length>=1);
+  assert.ok(await g.brands.update(pgwid,(gb as any).legacy_id||(gb as any).id,{name:'Renamed'}));
+});
+await t('posts.targets.claimDue pg SKIP LOCKED', async()=>{
+  const g=createPgRepos(); assert.ok(Array.isArray(await g.posts.targets.claimDue('w1',5)));
+});
 console.log(`\n${p} passed, ${f} failed`); process.exit(f?1:0);

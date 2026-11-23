@@ -50,6 +50,25 @@ export interface AuthTokensRepo {
   purgeExpired(): Promise<number>;
 }
 
+export interface EntityRepo<T = any> {
+  list(workspaceId: string, filter?: Record<string, any>): Promise<T[]>;
+  findById(workspaceId: string, id: string): Promise<T | undefined>;
+  create(workspaceId: string, data: Partial<T>): Promise<T>;
+  update(workspaceId: string, id: string, updates: Partial<T>): Promise<T | undefined>;
+  remove(workspaceId: string, id: string): Promise<boolean>;
+}
+
+export interface PostTargetsRepo {
+  listForPost(workspaceId: string, postId: string): Promise<any[]>;
+  claimDue(workerId: string, limit: number): Promise<any[]>;
+  markResult(id: string, patch: Record<string, any>): Promise<void>;
+}
+
+export interface NotificationsRepo {
+  listForUser(userId: string, unreadOnly?: boolean): Promise<any[]>;
+  markRead(id: string, userId: string): Promise<void>;
+}
+
 export interface SaasRepos {
   users: UsersRepo;
   sessions: SessionsRepo;
@@ -57,5 +76,12 @@ export interface SaasRepos {
   workspaceState: WorkspaceStateRepo;
   audit: AuditRepo;
   authTokens: AuthTokensRepo;
+  brands: EntityRepo;
+  projects: EntityRepo;
+  videos: EntityRepo;
+  mediaAssets: EntityRepo;
+  socialAccounts: EntityRepo;
+  posts: EntityRepo & { targets: PostTargetsRepo };
+  notifications: NotificationsRepo;
   driver: 'json' | 'pg';
 }
