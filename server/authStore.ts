@@ -837,7 +837,7 @@ const pg = {
        JOIN workspaces w ON w.id=m.workspace_id
        JOIN users u ON u.id=m.user_id
        WHERE u.legacy_id=$1 OR u.id::text=$1`,
-      [userId, userId],
+      [userId],
     )).rows;
     return rows.map((r: any) => ({
       id: r.id, workspaceId: r.ws_legacy, userId: r.user_legacy, role: r.role,
