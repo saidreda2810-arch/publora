@@ -244,6 +244,15 @@ async function startServer() {
     });
   });
 
+  // Hydrate PG-backed global stores (system settings, OAuth accounts, media
+  // catalog, drive connections, approvals) before accepting traffic.
+  if (process.env.DB_DRIVER === 'pg') {
+    const { gsHydrate, gsStartRefresh } = await import('./server/globalStores.ts');
+    await gsHydrate();
+    gsStartRefresh();
+    console.log('[globalStores] hydrated from PostgreSQL (15s cross-instance refresh)');
+  }
+
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[SRA Social Publisher] Server active at http://0.0.0.0:${PORT}`);
     startBackgroundScheduler();
