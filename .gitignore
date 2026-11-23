@@ -9,3 +9,4 @@ coverage/
 data/
 .refactor-backup/
 server.js
+backups/
