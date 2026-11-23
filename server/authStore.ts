@@ -233,6 +233,22 @@ const json = {
   },
   logAudit: (entry: any) => db.logAuditEvent(entry),
   getAuditLogs: (filter?: any) => db.getAuditLogs(filter) as any[],
+  listUsers: () => (db.getDb().users || []) as any[],
+  listWorkspaces: () => (db.getDb().workspaces || []) as any[],
+  listSessions: () => {
+    const d = db.getDb();
+    return ((d.sessions || []) as any[]).map((s) => ({
+      ...s,
+      user: (d.users || []).find((u: any) => u.id === s.userId) || null,
+    }));
+  },
+  adminDeleteSession: (sessionId: string) => {
+    const d = db.getDb();
+    const before = (d.sessions || []).length;
+    d.sessions = (d.sessions || []).filter((s: any) => s.id !== sessionId);
+    db.saveDatabase(d);
+    return before - (d.sessions || []).length;
+  },
 };
 
 // ---------------------------------------------------------------- PG driver
@@ -631,6 +647,35 @@ const pg = {
       id: r.id, action: r.action, details: r.details, timestamp: r.created_at,
       userId: r.user_legacy, userEmail: r.user_email, workspaceId: r.ws_legacy, ip: null,
     }));
+  },
+  async listUsers() {
+    const rows = (await query(`SELECT ${USER_COLS} FROM users ORDER BY created_at`)).rows;
+    return rows.map(mapUser);
+  },
+  async listWorkspaces() {
+    const rows = (await query(
+      `SELECT w.*, o.legacy_id AS owner_legacy FROM workspaces w JOIN users o ON o.id=w.owner_id ORDER BY w.created_at`,
+    )).rows;
+    return rows.map((r: any) => mapWorkspace(r, r.owner_legacy));
+  },
+  async listSessions() {
+    const rows = (await query(
+      `SELECT s.legacy_id,s.id,s.token_hash,host(s.ip) AS ip,s.user_agent,s.created_at,s.expires_at,u.legacy_id AS user_legacy
+       FROM sessions s JOIN users u ON u.id=s.user_id
+       WHERE s.revoked_at IS NULL ORDER BY s.created_at DESC`,
+    )).rows;
+    return rows.map((r: any) => ({
+      id: r.legacy_id || r.id, userId: r.user_legacy, token: r.token_hash,
+      ip: r.ip || null, userAgent: r.user_agent || null,
+      createdAt: r.created_at, expiresAt: r.expires_at, user: null,
+    }));
+  },
+  async adminDeleteSession(sessionId: string) {
+    const r = await query(
+      `UPDATE sessions SET revoked_at=now() WHERE revoked_at IS NULL AND (legacy_id=$1 OR id::text=$1)`,
+      [sessionId],
+    );
+    return r.rowCount ?? 0;
   },
 };
 

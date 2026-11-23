@@ -29,7 +29,8 @@ import {
   decryptToken,
 } from './oauthStore.ts';
 import { getRepos } from './repos/index.ts';
-import { authStore } from './authStore.ts';
+import { authStore, authDriver } from './authStore.ts';
+import { query } from './db/client.ts';
 
 // WP8: /state facade — reads/writes through the repository layer when
 // DB_DRIVER=pg, otherwise the legacy JSON blob (identical response shape).
@@ -936,26 +937,38 @@ function getStorageStats() {
 
 // 8. ADMIN & GOD OVERVIEW
 saasRouter.get('/admin/overview', requireRole(['god', 'super_admin', 'platform_admin', 'admin']), async (req: AuthenticatedRequest, res: Response) => {
-  const db = getDb();
   const caller = req.user!;
   const isGod = caller.role === 'god' && caller.email.toLowerCase() === GOD_OWNER_EMAIL.toLowerCase();
 
-  const totalUsers = db.users.length;
-  const activeUsers = db.users.filter((u) => u.status === 'active').length;
-  const suspendedUsers = db.users.filter((u) => u.status === 'suspended').length;
-  const verifiedUsers = db.users.filter((u) => u.isEmailVerified).length;
-  const totalWorkspaces = db.workspaces.length;
-  const activeSessions = db.sessions.length;
+  const users = await authStore.listUsers();
+  const workspaces = await authStore.listWorkspaces();
+  const sessions = await authStore.listSessions();
+
+  const totalUsers = users.length;
+  const activeUsers = users.filter((u: any) => u.status === 'active').length;
+  const suspendedUsers = users.filter((u: any) => u.status === 'suspended').length;
+  const verifiedUsers = users.filter((u: any) => u.isEmailVerified).length;
+  const totalWorkspaces = workspaces.length;
+  const activeSessions = sessions.length;
 
   let totalVideos = 0;
   let totalPosts = 0;
   let totalAccounts = 0;
 
-  Object.values(db.workspaceData).forEach((wsData) => {
-    totalVideos += wsData.videos?.length || 0;
-    totalPosts += wsData.posts?.length || 0;
-    totalAccounts += wsData.accounts?.length || 0;
-  });
+  if (authDriver === 'pg') {
+    const r = await query(
+      `SELECT (SELECT count(*) FROM videos) AS v, (SELECT count(*) FROM posts) AS p, (SELECT count(*) FROM social_accounts) AS a`,
+    );
+    totalVideos = Number(r.rows[0].v);
+    totalPosts = Number(r.rows[0].p);
+    totalAccounts = Number(r.rows[0].a);
+  } else {
+    Object.values(getDb().workspaceData).forEach((wsData) => {
+      totalVideos += wsData.videos?.length || 0;
+      totalPosts += wsData.posts?.length || 0;
+      totalAccounts += wsData.accounts?.length || 0;
+    });
+  }
 
   const recentLogs = await await authStore.getAuditLogs({ limit: 50 });
   const storage = getStorageStats();
@@ -989,11 +1002,11 @@ saasRouter.get('/admin/overview', requireRole(['god', 'super_admin', 'platform_a
 
 // 9. USER LIST (STRICT PRIVACY ENFORCED - ZERO PASSWORDS/HASHES/PRIVATE CONTENT EXPOSED)
 saasRouter.get('/admin/users', requireRole(['god', 'super_admin', 'platform_admin', 'admin', 'support']), async (req: AuthenticatedRequest, res: Response) => {
-  const db = getDb();
   const caller = req.user!;
+  const users = await authStore.listUsers();
 
   // Map only administrative metadata - password hashes, salts, MFA secrets, and private workspaces are strictly omitted
-  const safeUsers = await Promise.all(db.users.map(async (u: any) => {
+  const safeUsers = await Promise.all(users.map(async (u: any) => {
     const sanitized = sanitizeUserForClient(u);
     const workspaces = await authStore.getUserWorkspaces(u.id);
     const isGod = u.email.toLowerCase() === GOD_OWNER_EMAIL.toLowerCase() || u.role === 'god';
@@ -1020,9 +1033,8 @@ saasRouter.put('/admin/users/:id/status', requireGodOwner, async (req: Authentic
   const targetId = req.params.id;
   const { status } = req.body;
   const caller = req.user!;
-  const db = getDb();
 
-  const targetUser = db.users.find((u) => u.id === targetId);
+  const targetUser = await authStore.findUserById(targetId);
   if (!targetUser) {
     return res.status(404).json({ success: false, error: 'User not found.' });
   }
@@ -1042,7 +1054,7 @@ saasRouter.put('/admin/users/:id/status', requireGodOwner, async (req: Authentic
 
   // Hierarchy enforcement: caller must outrank target (unless caller is GOD)
   const callerLevel = ROLE_HIERARCHY[caller.role] ?? 0;
-  const targetLevel = ROLE_HIERARCHY[targetUser.role] ?? 0;
+  const targetLevel = ROLE_HIERARCHY[targetUser.role as UserRole] ?? 0;
   if (caller.role !== 'god' && callerLevel <= targetLevel) {
     return res.status(403).json({
       success: false,
@@ -1072,9 +1084,8 @@ saasRouter.put('/admin/users/:id/role', requireGodOwner, async (req: Authenticat
   const targetId = req.params.id;
   const { role } = req.body as { role: UserRole };
   const caller = req.user!;
-  const db = getDb();
 
-  const targetUser = db.users.find((u) => u.id === targetId);
+  const targetUser = await authStore.findUserById(targetId);
   if (!targetUser) {
     return res.status(404).json({ success: false, error: 'User not found.' });
   }
@@ -1101,7 +1112,7 @@ saasRouter.put('/admin/users/:id/role', requireGodOwner, async (req: Authenticat
   }
 
   const callerLevel = ROLE_HIERARCHY[caller.role] ?? 0;
-  const targetLevel = ROLE_HIERARCHY[targetUser.role] ?? 0;
+  const targetLevel = ROLE_HIERARCHY[targetUser.role as UserRole] ?? 0;
   const targetAssignLevel = ROLE_HIERARCHY[role] ?? 0;
 
   // 3. Only GOD can promote to or demote a super_admin
@@ -1136,30 +1147,28 @@ saasRouter.put('/admin/users/:id/role', requireGodOwner, async (req: Authenticat
 saasRouter.delete('/admin/users/:id/sessions', requireGodOwner, async (req: AuthenticatedRequest, res: Response) => {
   const targetId = req.params.id;
   const caller = req.user!;
-  const db = getDb();
-  const target = db.users.find((u) => u.id === targetId);
+  const target = await authStore.findUserById(targetId);
   if (!target) return res.status(404).json({ success: false, error: 'User not found.' });
   if (target.id === caller.id) return res.status(400).json({ success: false, error: 'Cannot revoke your own sessions here.' });
-  const before = db.sessions.length;
-  db.sessions = db.sessions.filter((s) => s.userId !== targetId);
-  saveDatabase(db);
+  const before = (await authStore.listSessions()).filter((s: any) => s.userId === targetId).length;
+  await authStore.deleteUserSessions(targetId);
+  const revoked = before - (await authStore.listSessions()).filter((s: any) => s.userId === targetId).length;
   await authStore.logAudit({
     userId: caller.id,
     userEmail: caller.email,
     action: 'admin_sessions_revoked_all',
-    details: `Revoked ${before - db.sessions.length} session(s) for user ${target.email}.`,
+    details: `Revoked ${revoked} session(s) for user ${target.email}.`,
     ip: req.socket.remoteAddress,
   });
-  res.json({ success: true, revoked: before - db.sessions.length });
+  res.json({ success: true, revoked });
 });
 
 // 12. DELETE USER ACCOUNT (ADMIN / GOD INITIATED)
 saasRouter.delete('/admin/users/:id', requireGodOwner, async (req: AuthenticatedRequest, res: Response) => {
   const targetId = req.params.id;
   const caller = req.user!;
-  const db = getDb();
 
-  const targetUser = db.users.find((u) => u.id === targetId);
+  const targetUser = await authStore.findUserById(targetId);
   if (!targetUser) {
     return res.status(404).json({ success: false, error: 'User not found.' });
   }
@@ -1270,13 +1279,14 @@ saasRouter.delete('/admin/announcements/:id', requireGodOwner, async (req: Authe
 
 // 15. ACTIVE SESSION GOVERNANCE
 saasRouter.get('/admin/sessions', requireRole(['god', 'super_admin', 'platform_admin', 'admin']), async (req: AuthenticatedRequest, res: Response) => {
-  const db = getDb();
-  const sessions = db.sessions.map((s) => {
-    const user = db.users.find((u) => u.id === s.userId);
+  const users = await authStore.listUsers();
+  const sessions = await authStore.listSessions();
+  const sessionsOut = sessions.map((s: any) => {
+    const user = s.user || users.find((u: any) => u.id === s.userId);
     return {
       id: s.id,
       userId: s.userId,
-      maskedToken: `${s.token.slice(0, 6)}...${s.token.slice(-6)}`,
+      maskedToken: `${String(s.token || '').slice(0, 6)}...${String(s.token || '').slice(-6)}`,
       ip: s.ip || 'Unknown IP',
       userAgent: s.userAgent || 'Unknown Agent',
       createdAt: s.createdAt,
@@ -1285,21 +1295,19 @@ saasRouter.get('/admin/sessions', requireRole(['god', 'super_admin', 'platform_a
     };
   });
 
-  res.json({ success: true, sessions });
+  res.json({ success: true, sessions: sessionsOut });
 });
 
 saasRouter.delete('/admin/sessions/:id', requireRole(['god', 'super_admin', 'platform_admin']), async (req: AuthenticatedRequest, res: Response) => {
   const sessionId = req.params.id;
   const caller = req.user!;
-  const db = getDb();
 
-  const session = db.sessions.find((s) => s.id === sessionId);
+  const session = (await authStore.listSessions()).find((s: any) => s.id === sessionId);
   if (!session) {
     return res.status(404).json({ success: false, error: 'Session not found.' });
   }
 
-  db.sessions = db.sessions.filter((s) => s.id !== sessionId);
-  saveDatabase(db);
+  await authStore.adminDeleteSession(sessionId);
 
   await authStore.logAudit({
     userId: caller.id,
@@ -1371,7 +1379,6 @@ saasRouter.put('/admin/upload-policy', requireRole(['god', 'super_admin', 'platf
 });
 
 saasRouter.get('/admin/storage-details', requireRole(['god', 'super_admin', 'platform_admin', 'admin']), async (req: AuthenticatedRequest, res: Response) => {
-  const db = getDb();
   const catalogPath = path.resolve(process.cwd(), 'data', 'media_catalog.json');
   let catalog: any[] = [];
   try { catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf-8')); } catch {}
@@ -1384,7 +1391,7 @@ saasRouter.get('/admin/storage-details', requireRole(['god', 'super_admin', 'pla
     if ((m.mimeType || '').startsWith('video/')) cur.videos++;
     byWorkspace.set(m.workspaceId, cur);
   }
-  const workspaces = db.workspaces.map((w) => {
+  const workspaces = (await authStore.listWorkspaces()).map((w: any) => {
     const usage = byWorkspace.get(w.id) || { bytes: 0, videos: 0 };
     return {
       workspaceId: w.id,
@@ -1395,7 +1402,7 @@ saasRouter.get('/admin/storage-details', requireRole(['god', 'super_admin', 'pla
       maxFileBytes: planLimitBytes(w.plan),
       quotaBytes: getUploadPolicy().workspaceQuotaBytes || null,
     };
-  }).sort((a, b) => b.usedBytes - a.usedBytes);
+  }).sort((a: any, b: any) => b.usedBytes - a.usedBytes);
 
   const largest = [...catalog]
     .filter((m) => (m.mimeType || '').startsWith('video/'))
