@@ -87,6 +87,26 @@ function mapSession(r: any, rawToken?: string): UserSession {
   } as UserSession;
 }
 
+function mapInvitation(r: any, withToken = false) {
+  const now = Date.now();
+  const status = r.revoked_at ? 'revoked'
+    : r.accepted_at ? 'accepted'
+    : new Date(r.expires_at).getTime() < now ? 'expired'
+    : 'pending';
+  return {
+    id: r.id,
+    workspaceId: r.ws_legacy || r.workspaceId,
+    email: r.email,
+    role: r.role,
+    tokenHash: withToken ? r.token_hash : undefined,
+    status,
+    invitedBy: r.inviter_legacy || r.invitedBy || undefined,
+    createdAt: r.created_at ?? r.createdAt,
+    expiresAt: r.expires_at ?? r.expiresAt,
+    acceptedAt: r.accepted_at ?? r.acceptedAt ?? undefined,
+  };
+}
+
 function mapToken(r: any): VerificationToken {
   return {
     id: r.id,
@@ -248,6 +268,64 @@ const json = {
     d.sessions = (d.sessions || []).filter((s: any) => s.id !== sessionId);
     db.saveDatabase(d);
     return before - (d.sessions || []).length;
+  },
+  // ---- workspace invitations ----
+  listInvitations: (workspaceId: string) =>
+    ((db.getDb().workspaceInvitations || []) as any[]).filter((i) => i.workspaceId === workspaceId),
+  findInvitationByTokenHash: (tokenHash: string) =>
+    ((db.getDb().workspaceInvitations || []) as any[]).find((i) => i.tokenHash === tokenHash),
+  findInvitationById: (id: string, workspaceId: string) =>
+    ((db.getDb().workspaceInvitations || []) as any[]).find((i) => i.id === id && i.workspaceId === workspaceId),
+  createInvitation: (inv: any) => {
+    const d = db.getDb();
+    d.workspaceInvitations = [...(d.workspaceInvitations || []), inv];
+    db.saveDatabase(d);
+    return inv;
+  },
+  updateInvitation: (id: string, updates: any) => {
+    const d = db.getDb();
+    const inv = (d.workspaceInvitations || []).find((i: any) => i.id === id);
+    if (!inv) return undefined;
+    Object.assign(inv, updates);
+    db.saveDatabase(d);
+    return inv;
+  },
+  // ---- workspace member mutations ----
+  listWorkspaceMemberRecords: (workspaceId: string) =>
+    ((db.getDb().workspaceMembers || []) as any[]).filter((m) => m.workspaceId === workspaceId),
+  addWorkspaceMember: (m: any) => {
+    const d = db.getDb();
+    d.workspaceMembers = [...(d.workspaceMembers || []), m];
+    db.saveDatabase(d);
+    return m;
+  },
+  updateWorkspaceMember: (memberId: string, workspaceId: string, updates: any) => {
+    const d = db.getDb();
+    const m = (d.workspaceMembers || []).find((x: any) => x.id === memberId && x.workspaceId === workspaceId);
+    if (!m) return undefined;
+    Object.assign(m, updates);
+    db.saveDatabase(d);
+    return m;
+  },
+  removeWorkspaceMember: (memberId: string, workspaceId: string) => {
+    const d = db.getDb();
+    const before = (d.workspaceMembers || []).length;
+    d.workspaceMembers = (d.workspaceMembers || []).filter((x: any) => !(x.id === memberId && x.workspaceId === workspaceId));
+    db.saveDatabase(d);
+    return before - (d.workspaceMembers || []).length;
+  },
+  transferOwnership: (workspaceId: string, actorUserId: string, targetMemberId: string) => {
+    const d = db.getDb();
+    const members = d.workspaceMembers || [];
+    const target = members.find((m: any) => m.id === targetMemberId && m.workspaceId === workspaceId);
+    if (!target) return { ok: false as const, error: 'Member not found' };
+    if (target.userId === actorUserId) return { ok: false as const, error: 'Already the owner' };
+    if (target.status && target.status !== 'active') return { ok: false as const, error: 'Target member is not active' };
+    const currentOwner = members.find((m: any) => m.workspaceId === workspaceId && m.userId === actorUserId && m.role === 'owner');
+    if (currentOwner) currentOwner.role = 'manager';
+    target.role = 'owner';
+    db.saveDatabase(d);
+    return { ok: true as const, target };
   },
 };
 
@@ -676,6 +754,137 @@ const pg = {
       [sessionId],
     );
     return r.rowCount ?? 0;
+  },
+  // ---- workspace invitations ----
+  async listInvitations(workspaceId: string) {
+    const rows = (await query(
+      `SELECT i.id::text AS id, i.email::text AS email, i.role, i.expires_at, i.accepted_at, i.revoked_at, i.created_at
+       FROM workspace_invitations i JOIN workspaces w ON w.id=i.workspace_id
+       WHERE w.legacy_id=$1 ORDER BY i.created_at DESC`,
+      [workspaceId],
+    )).rows;
+    return rows.map((r: any) => mapInvitation(r));
+  },
+  async findInvitationByTokenHash(tokenHash: string) {
+    const r = (await query(
+      `SELECT i.id::text AS id, i.email::text AS email, i.role, i.token_hash, i.expires_at, i.accepted_at, i.revoked_at, i.created_at,
+              w.legacy_id AS ws_legacy, u.legacy_id AS inviter_legacy
+       FROM workspace_invitations i
+       JOIN workspaces w ON w.id=i.workspace_id
+       JOIN users u ON u.id=i.invited_by
+       WHERE i.token_hash=$1`,
+      [tokenHash],
+    )).rows[0];
+    return r ? mapInvitation(r, true) : undefined;
+  },
+  async findInvitationById(id: string, workspaceId: string) {
+    const r = (await query(
+      `SELECT i.id::text AS id, i.email::text AS email, i.role, i.token_hash, i.expires_at, i.accepted_at, i.revoked_at, i.created_at,
+              w.legacy_id AS ws_legacy, u.legacy_id AS inviter_legacy
+       FROM workspace_invitations i
+       JOIN workspaces w ON w.id=i.workspace_id
+       JOIN users u ON u.id=i.invited_by
+       WHERE i.id::text=$1 AND w.legacy_id=$2`,
+      [id, workspaceId],
+    )).rows[0];
+    return r ? mapInvitation(r, true) : undefined;
+  },
+  async createInvitation(inv: any) {
+    const ws = (await query(`SELECT id FROM workspaces WHERE ${LEGACY('id::text')} OR id::text=$3`, [inv.workspaceId, inv.workspaceId, inv.workspaceId])).rows[0];
+    const inviter = (await query(`SELECT id FROM users WHERE ${LEGACY('id::text')} OR id::text=$3`, [inv.invitedBy, inv.invitedBy, inv.invitedBy])).rows[0];
+    if (!ws || !inviter) throw new Error('workspace or inviter not found');
+    const r = (await query(
+      `INSERT INTO workspace_invitations(workspace_id,email,role,token_hash,invited_by,expires_at,created_at)
+       VALUES($1,$2,$3,$4,$5,$6,now()) RETURNING id::text AS id`,
+      [ws.id, inv.email, inv.role || 'editor', inv.tokenHash, inviter.id, inv.expiresAt],
+    )).rows[0];
+    return { ...inv, id: r.id, status: 'pending', createdAt: new Date().toISOString() };
+  },
+  async updateInvitation(id: string, updates: any) {
+    const sets: string[] = []; const vals: any[] = []; let i = 1;
+    if (updates.status === 'accepted') { sets.push(`accepted_at=now()`); }
+    else if (updates.status === 'revoked') { sets.push(`revoked_at=now()`); }
+    if (updates.acceptedAt) { sets.push(`accepted_at=$${i++}`); vals.push(updates.acceptedAt); }
+    if (!sets.length) return this.findInvitationById(id, updates.workspaceId);
+    await query(`UPDATE workspace_invitations SET ${sets.join(',')} WHERE id::text=$${i}`, [...vals, id]);
+    return this.findInvitationById(id, updates.workspaceId || '');
+  },
+  // ---- workspace member mutations ----
+  async listWorkspaceMemberRecords(workspaceId: string) {
+    const rows = (await query(
+      `SELECT m.legacy_id AS id, m.role, m.status, m.joined_at, m.custom_role_id,
+              u.legacy_id AS user_legacy, inv.legacy_id AS inviter_legacy
+       FROM workspace_members m
+       JOIN workspaces w ON w.id=m.workspace_id
+       JOIN users u ON u.id=m.user_id
+       LEFT JOIN users inv ON inv.id=m.invited_by
+       WHERE w.legacy_id=$1`,
+      [workspaceId],
+    )).rows;
+    return rows.map((r: any) => ({
+      id: r.id, workspaceId, userId: r.user_legacy, role: r.role,
+      status: r.status, customRoleId: r.custom_role_id || undefined,
+      joinedAt: r.joined_at, invitedBy: r.inviter_legacy || undefined,
+    }));
+  },
+  async addWorkspaceMember(m: any) {
+    return withTransaction(async (c) => {
+      const ws = (await c.query(`SELECT id FROM workspaces WHERE ${LEGACY('id::text')} OR id::text=$3`, [m.workspaceId, m.workspaceId, m.workspaceId])).rows[0];
+      const usr = (await c.query(`SELECT id FROM users WHERE ${LEGACY('id::text')} OR id::text=$3`, [m.userId, m.userId, m.userId])).rows[0];
+      if (!ws || !usr) throw new Error('workspace or user not found');
+      const inviter = m.invitedBy
+        ? (await c.query(`SELECT id FROM users WHERE ${LEGACY('id::text')} OR id::text=$3`, [m.invitedBy, m.invitedBy, m.invitedBy])).rows[0]?.id ?? null
+        : null;
+      await c.query(
+        `INSERT INTO workspace_members(legacy_id,workspace_id,user_id,role,status,invited_by,joined_at,created_at)
+         VALUES($1,$2,$3,$4,$5,$6,$7,now()) ON CONFLICT (workspace_id,user_id) DO NOTHING`,
+        [m.id || rid('mem'), ws.id, usr.id, m.role || 'editor', m.status || 'active', inviter, m.joinedAt || null],
+      );
+      return m;
+    });
+  },
+  async updateWorkspaceMember(memberId: string, workspaceId: string, updates: any) {
+    const sets: string[] = []; const vals: any[] = []; let i = 1;
+    if (updates.role !== undefined) { sets.push(`role=$${i++}`); vals.push(updates.role); }
+    if (updates.status !== undefined) { sets.push(`status=$${i++}`); vals.push(updates.status); }
+    if (!sets.length) return undefined;
+    const r = await query(
+      `UPDATE workspace_members m SET ${sets.join(',')}
+       FROM workspaces w WHERE m.workspace_id=w.id AND w.legacy_id=$${i} AND m.legacy_id=$${i + 1}`,
+      [...vals, workspaceId, memberId],
+    );
+    return (r.rowCount ?? 0) > 0 ? { id: memberId, ...updates } : undefined;
+  },
+  async removeWorkspaceMember(memberId: string, workspaceId: string) {
+    const r = await query(
+      `DELETE FROM workspace_members m USING workspaces w
+       WHERE m.workspace_id=w.id AND w.legacy_id=$1 AND m.legacy_id=$2`,
+      [workspaceId, memberId],
+    );
+    return r.rowCount ?? 0;
+  },
+  async transferOwnership(workspaceId: string, actorUserId: string, targetMemberId: string) {
+    return withTransaction(async (c) => {
+      const ws = (await c.query(`SELECT id FROM workspaces WHERE ${LEGACY('id::text')} OR id::text=$3`, [workspaceId, workspaceId, workspaceId])).rows[0];
+      if (!ws) return { ok: false as const, error: 'Workspace not found' };
+      const actor = (await c.query(`SELECT id FROM users WHERE ${LEGACY('id::text')} OR id::text=$3`, [actorUserId, actorUserId, actorUserId])).rows[0];
+      const target = (await c.query(
+        `SELECT m.id, m.user_id, u.legacy_id AS user_legacy, m.status FROM workspace_members m
+         JOIN users u ON u.id=m.user_id WHERE m.workspace_id=$1 AND m.legacy_id=$2`,
+        [ws.id, targetMemberId],
+      )).rows[0];
+      if (!target) return { ok: false as const, error: 'Member not found' };
+      if (target.user_legacy === actorUserId) return { ok: false as const, error: 'Already the owner' };
+      if (target.status && target.status !== 'active') return { ok: false as const, error: 'Target member is not active' };
+      if (actor) {
+        await c.query(
+          `UPDATE workspace_members SET role='manager' WHERE workspace_id=$1 AND user_id=$2 AND role='owner'`,
+          [ws.id, actor.id],
+        );
+      }
+      await c.query(`UPDATE workspace_members SET role='owner' WHERE id=$1`, [target.id]);
+      return { ok: true as const, target: { id: targetMemberId, userId: target.user_legacy, role: 'owner' } };
+    });
   },
 };
 

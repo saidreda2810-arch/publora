@@ -746,14 +746,11 @@ saasRouter.post('/workspace', async (req: AuthenticatedRequest, res: Response) =
 saasRouter.put('/workspace/:id', async (req: AuthenticatedRequest, res: Response) => {
   const workspaceId = req.params.id;
   const user = req.user!;
-  const db = getDb();
 
-  const membership = db.workspaceMembers.find(
-    (m) => m.workspaceId === workspaceId && m.userId === user.id
-  );
+  const memberRole = await authStore.getMemberRole(user.id, workspaceId);
   const isPlatformAdmin = user.role === 'platform_admin' || user.role === 'god';
 
-  if (!membership && !isPlatformAdmin) {
+  if (!memberRole && !isPlatformAdmin) {
     return res.status(403).json({ success: false, error: 'Unauthorized to modify this workspace.' });
   }
 
@@ -762,7 +759,6 @@ saasRouter.put('/workspace/:id', async (req: AuthenticatedRequest, res: Response
   const { name, settings } = req.body;
   const updates: any = {};
 
-  const memberRole = membership?.role;
   const canManageWorkspace = isPlatformAdmin || memberRole === 'owner' || memberRole === 'admin';
   if (!canManageWorkspace) {
     return res.status(403).json({ success: false, error: 'Only workspace owners/admins can modify workspace settings.' });
@@ -820,9 +816,7 @@ saasRouter.post('/members/invite', async (req: AuthenticatedRequest, res: Respon
     return res.status(400).json({ success: false, error: 'Valid email required for team invite.' });
   }
 
-  const db = getDb();
-  // Check if user already in platform
-  const existingUser = db.users.find((u) => u.email.toLowerCase() === email.toLowerCase());
+  const existingUser = await authStore.findUserByEmail(email);
 
   // Real invitation: secure token (hash stored), 7-day expiry, pending until accepted
   const crypto = await import('crypto');
@@ -831,20 +825,19 @@ saasRouter.post('/members/invite', async (req: AuthenticatedRequest, res: Respon
   const expiresAt = new Date(Date.now() + 7 * 86400000).toISOString();
 
   // Duplicate pending-invite check
-  const existingInvite = (db.workspaceInvitations || []).find(
-    (i: any) => i.workspaceId === workspaceId && i.email === email.toLowerCase() && i.status === 'pending'
+  const existingInvite = (await authStore.listInvitations(workspaceId)).find(
+    (i: any) => i.email?.toLowerCase() === email.toLowerCase() && i.status === 'pending'
   );
   if (existingInvite) {
     return res.status(409).json({ success: false, error: 'A pending invitation already exists for this email.' });
   }
   // Already a member?
   if (existingUser) {
-    const alreadyMember = db.workspaceMembers.some((m) => m.workspaceId === workspaceId && m.userId === existingUser.id);
-    if (alreadyMember) return res.status(409).json({ success: false, error: 'User is already a workspace member.' });
+    const memberRole = await authStore.getMemberRole(existingUser.id, workspaceId);
+    if (memberRole) return res.status(409).json({ success: false, error: 'User is already a workspace member.' });
   }
 
-  const invitation = {
-    id: `inv_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
+  const invitation = await authStore.createInvitation({
     workspaceId,
     email: email.toLowerCase(),
     role,
@@ -853,9 +846,7 @@ saasRouter.post('/members/invite', async (req: AuthenticatedRequest, res: Respon
     invitedBy: req.user?.id || null,
     createdAt: new Date().toISOString(),
     expiresAt,
-  };
-  db.workspaceInvitations = [...(db.workspaceInvitations || []), invitation];
-  saveDatabase(db);
+  });
 
   await authStore.logAudit({
     workspaceId,
@@ -1806,9 +1797,7 @@ saasRouter.get('/automations/analytics', async (req: AuthenticatedRequest, res: 
 saasRouter.get('/members/invitations', async (req: AuthenticatedRequest, res: Response) => {
   const workspaceId = req.workspace?.id;
   if (!workspaceId) return res.status(400).json({ success: false, error: 'Workspace required' });
-  const db = getDb();
-  const invs = (db.workspaceInvitations || [])
-    .filter((i: any) => i.workspaceId === workspaceId)
+  const invs = (await authStore.listInvitations(workspaceId))
     .map((i: any) => ({ id: i.id, email: i.email, role: i.role, status: i.status, expiresAt: i.expiresAt, createdAt: i.createdAt }));
   res.json({ success: true, invitations: invs });
 });
@@ -1818,12 +1807,10 @@ saasRouter.post('/members/invitations/:id/revoke', async (req: AuthenticatedRequ
   if (!workspaceId) return res.status(400).json({ success: false, error: 'Workspace required' });
   const inviterRole = await authStore.getMemberRole(req.user?.id || '', workspaceId);
   if (!hasWorkspacePermission(inviterRole, 'manage_team')) return res.status(403).json({ success: false, error: 'No permission' });
-  const db = getDb();
-  const inv = (db.workspaceInvitations || []).find((i: any) => i.id === req.params.id && i.workspaceId === workspaceId);
+  const inv = await authStore.findInvitationById(req.params.id, workspaceId);
   if (!inv) return res.status(404).json({ success: false, error: 'Invitation not found' });
   if (inv.status !== 'pending') return res.status(400).json({ success: false, error: 'Only pending invitations can be revoked' });
-  inv.status = 'revoked';
-  saveDatabase(db);
+  await authStore.updateInvitation(inv.id, { status: 'revoked', workspaceId });
   res.json({ success: true });
 });
 
@@ -1832,35 +1819,32 @@ saasRouter.post('/members/invitations/accept', async (req: AuthenticatedRequest,
   if (!token) return res.status(400).json({ success: false, error: 'Token required' });
   const crypto = await import('crypto');
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-  const db = getDb();
-  const inv = (db.workspaceInvitations || []).find((i: any) => i.tokenHash === tokenHash);
+  const inv = await authStore.findInvitationByTokenHash(tokenHash);
   if (!inv) return res.status(404).json({ success: false, error: 'Invalid invitation token' });
   if (inv.status !== 'pending') return res.status(400).json({ success: false, error: `Invitation is ${inv.status}` });
   if (new Date(inv.expiresAt) < new Date()) {
-    inv.status = 'expired';
-    saveDatabase(db);
+    await authStore.updateInvitation(inv.id, { status: 'expired', workspaceId: inv.workspaceId });
     return res.status(400).json({ success: false, error: 'Invitation has expired' });
   }
   // Verify accepting user's email matches invitation
-  const user = db.users.find((u: any) => u.id === req.user?.id);
+  const user = await authStore.findUserById(req.user?.id || '');
   if (!user || user.email.toLowerCase() !== inv.email.toLowerCase()) {
     return res.status(403).json({ success: false, error: 'This invitation was sent to a different email address' });
   }
   // Create membership
-  const alreadyMember = db.workspaceMembers.some((m: any) => m.workspaceId === inv.workspaceId && m.userId === user.id);
-  if (!alreadyMember) {
-    db.workspaceMembers.push({
-      id: `mem_${Date.now().toString(36)}`,
+  const memberRole = await authStore.getMemberRole(user.id, inv.workspaceId);
+  if (!memberRole) {
+    await authStore.addWorkspaceMember({
+      id: `mem_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
       workspaceId: inv.workspaceId,
       userId: user.id,
       role: inv.role,
+      status: 'active',
       joinedAt: new Date().toISOString(),
       invitedBy: inv.invitedBy,
     });
   }
-  inv.status = 'accepted';
-  inv.acceptedAt = new Date().toISOString();
-  saveDatabase(db);
+  await authStore.updateInvitation(inv.id, { status: 'accepted', acceptedAt: new Date().toISOString(), workspaceId: inv.workspaceId });
   await authStore.logAudit({ workspaceId: inv.workspaceId, userId: user.id, action: 'member_invite_accepted', details: `Accepted invite as ${inv.role}.` });
   res.json({ success: true, workspaceId: inv.workspaceId });
 });
@@ -1872,8 +1856,7 @@ saasRouter.patch('/members/:id', async (req: AuthenticatedRequest, res: Response
   const actorRole = await authStore.getMemberRole(req.user?.id || '', workspaceId);
   if (!hasWorkspacePermission(actorRole, 'manage_team')) return res.status(403).json({ success: false, error: 'No permission to manage members' });
 
-  const db = getDb();
-  const member = db.workspaceMembers.find((m: any) => m.id === req.params.id && m.workspaceId === workspaceId);
+  const member = (await authStore.listWorkspaceMemberRecords(workspaceId)).find((m: any) => m.id === req.params.id);
   if (!member) return res.status(404).json({ success: false, error: 'Member not found' });
 
   const { role, status } = req.body || {};
@@ -1883,18 +1866,19 @@ saasRouter.patch('/members/:id', async (req: AuthenticatedRequest, res: Response
   if (targetIsOwner && (role || status)) {
     return res.status(403).json({ success: false, error: 'Owner membership cannot be modified. Transfer ownership first.' });
   }
+  const updates: any = {};
   if (role) {
     const validRoles = ['manager', 'editor', 'publisher', 'analyst', 'viewer'];
     if (!validRoles.includes(role)) return res.status(400).json({ success: false, error: 'Invalid role' });
-    member.role = role;
+    updates.role = role;
   }
   if (status) {
     if (!['active', 'suspended'].includes(status)) return res.status(400).json({ success: false, error: 'Invalid status' });
-    member.status = status;
+    updates.status = status;
   }
-  saveDatabase(db);
+  const updated = await authStore.updateWorkspaceMember(member.id, workspaceId, updates);
   await authStore.logAudit({ workspaceId, userId: req.user?.id, action: 'member_updated', details: `Member ${member.userId} updated: ${JSON.stringify({ role, status })}` });
-  res.json({ success: true, member });
+  res.json({ success: true, member: { ...member, ...updated } });
 });
 
 saasRouter.delete('/members/:id', async (req: AuthenticatedRequest, res: Response) => {
@@ -1903,17 +1887,16 @@ saasRouter.delete('/members/:id', async (req: AuthenticatedRequest, res: Respons
   const actorRole = await authStore.getMemberRole(req.user?.id || '', workspaceId);
   if (!hasWorkspacePermission(actorRole, 'manage_team')) return res.status(403).json({ success: false, error: 'No permission to remove members' });
 
-  const db = getDb();
-  const member = db.workspaceMembers.find((m: any) => m.id === req.params.id && m.workspaceId === workspaceId);
+  const members = await authStore.listWorkspaceMemberRecords(workspaceId);
+  const member = members.find((m: any) => m.id === req.params.id);
   if (!member) return res.status(404).json({ success: false, error: 'Member not found' });
   if (member.role === 'owner') {
     // Last-owner protection
-    const owners = db.workspaceMembers.filter((m: any) => m.workspaceId === workspaceId && m.role === 'owner');
+    const owners = members.filter((m: any) => m.role === 'owner');
     if (owners.length <= 1) return res.status(403).json({ success: false, error: 'Cannot remove the last workspace owner' });
     return res.status(403).json({ success: false, error: 'Owner must transfer ownership before removal' });
   }
-  db.workspaceMembers = db.workspaceMembers.filter((m: any) => m.id !== req.params.id);
-  saveDatabase(db);
+  await authStore.removeWorkspaceMember(member.id, workspaceId);
   await authStore.logAudit({ workspaceId, userId: req.user?.id, action: 'member_removed', details: `Removed member ${member.userId} (${member.role})` });
   res.json({ success: true });
 });
@@ -1929,18 +1912,13 @@ saasRouter.post('/workspaces/transfer-ownership', async (req: AuthenticatedReque
   if (confirm !== true) return res.status(400).json({ success: false, error: 'Explicit confirmation required' });
   if (!memberId) return res.status(400).json({ success: false, error: 'memberId required' });
 
-  const db = getDb();
-  const target = db.workspaceMembers.find((m: any) => m.id === memberId && m.workspaceId === workspaceId);
-  if (!target) return res.status(404).json({ success: false, error: 'Member not found' });
-  if (target.userId === req.user?.id) return res.status(400).json({ success: false, error: 'Already the owner' });
-  if (target.status && target.status !== 'active') return res.status(400).json({ success: false, error: 'Target member is not active' });
-
-  // Atomic swap: current owner → manager, target → owner
-  const currentOwner = db.workspaceMembers.find((m: any) => m.workspaceId === workspaceId && m.userId === req.user?.id && m.role === 'owner');
-  if (currentOwner) currentOwner.role = 'manager';
-  target.role = 'owner';
-  saveDatabase(db);
-  await authStore.logAudit({ workspaceId, userId: req.user?.id, action: 'ownership_transferred', details: `Ownership transferred to ${target.userId}` });
+  const result = await authStore.transferOwnership(workspaceId, req.user?.id || '', memberId);
+  if (!result.ok) {
+    const msg = result.error;
+    const status = msg === 'Member not found' ? 404 : msg === 'Already the owner' || msg === 'Target member is not active' ? 400 : 400;
+    return res.status(status).json({ success: false, error: msg });
+  }
+  await authStore.logAudit({ workspaceId, userId: req.user?.id, action: 'ownership_transferred', details: `Ownership transferred to ${result.target.userId}` });
   res.json({ success: true });
 });
 
