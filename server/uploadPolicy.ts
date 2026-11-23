@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { globalStoresEnabled, gsGet, gsSet } from './globalStores.ts';
 
 /**
  * Centralized video upload policy — persisted in data/upload_policy.json.
@@ -50,6 +51,11 @@ const UPLOADS_DIR = path.resolve(process.cwd(), 'data', 'uploads');
 const CATALOG_FILE = path.resolve(process.cwd(), 'data', 'media_catalog.json');
 
 export function getUploadPolicy(): UploadPolicy {
+  if (globalStoresEnabled()) {
+    const raw = gsGet<any>('upload_policy', null);
+    if (raw) return { ...DEFAULT_UPLOAD_POLICY, ...raw, planLimitsBytes: { ...DEFAULT_UPLOAD_POLICY.planLimitsBytes, ...(raw.planLimitsBytes || {}) } };
+    return { ...DEFAULT_UPLOAD_POLICY };
+  }
   try {
     if (fs.existsSync(POLICY_FILE)) {
       const raw = JSON.parse(fs.readFileSync(POLICY_FILE, 'utf-8'));
@@ -85,6 +91,10 @@ export function updateUploadPolicy(updates: Partial<UploadPolicy>): { ok: boolea
   if (!Array.isArray(next.allowedMimeTypes) || next.allowedMimeTypes.length === 0) return { ok: false, error: 'allowedMimeTypes must be a non-empty array' };
   if (!Array.isArray(next.allowedExtensions) || next.allowedExtensions.length === 0) return { ok: false, error: 'allowedExtensions must be a non-empty array' };
 
+  if (globalStoresEnabled()) {
+    gsSet('upload_policy', next);
+    return { ok: true, policy: next };
+  }
   try {
     fs.mkdirSync(path.dirname(POLICY_FILE), { recursive: true });
     fs.writeFileSync(POLICY_FILE, JSON.stringify(next, null, 2), 'utf-8');

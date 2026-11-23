@@ -12,6 +12,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { getStorageProvider } from './storage/storageProvider.ts';
+import { globalStoresEnabled, gsGet, gsSet } from './globalStores.ts';
 
 const DATA_DIR = path.resolve(process.env.SRA_DATA_DIR || path.join(process.cwd(), 'data'));
 const ASSETS_FILE = path.join(DATA_DIR, 'media_assets.json');
@@ -42,6 +43,11 @@ let cache: MediaAssetRecord[] | null = null;
 
 function load(): MediaAssetRecord[] {
   if (cache) return cache;
+  if (globalStoresEnabled()) {
+    // No local cache in pg mode — gsGet reads the refreshed globalStores
+    // cache so cross-instance writes propagate on the refresh interval.
+    return gsGet<MediaAssetRecord[]>('media_assets', []);
+  }
   let rows: MediaAssetRecord[] = [];
   if (fs.existsSync(ASSETS_FILE)) {
     try { rows = JSON.parse(fs.readFileSync(ASSETS_FILE, 'utf8')); } catch { rows = []; }
@@ -75,6 +81,11 @@ function load(): MediaAssetRecord[] {
 }
 
 function save(rows: MediaAssetRecord[]) {
+  if (globalStoresEnabled()) {
+    gsSet('media_assets', rows);
+    cache = rows;
+    return;
+  }
   fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.writeFileSync(ASSETS_FILE, JSON.stringify(rows, null, 2));
   cache = rows;

@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { globalStoresEnabled, gsGet, gsSet } from './globalStores.ts';
 
 export const GOD_OWNER_EMAIL = process.env.GOD_OWNER_EMAIL || 'saidreda2810@gmail.com';
 
@@ -634,32 +635,48 @@ export function sanitizeUserForClient(user: User) {
   return safe;
 }
 
+const SYSTEM_SETTINGS_DEFAULTS: SystemSettings = {
+  maintenanceMode: false,
+  maintenanceMessage: 'The platform is undergoing scheduled maintenance. Please check back shortly.',
+  announcements: [],
+  featureFlags: {
+    userRegistration: true,
+    socialOAuth: true,
+    aiRetentionEngine: true,
+    scheduledPublishing: true,
+    workspaceSharing: true,
+  },
+  security: {
+    requireEmailVerification: true,
+    sessionExpiryDays: 30,
+    maxLoginAttemptsPerMinute: 30,
+  },
+};
+
 export function getSystemSettings(): SystemSettings {
+  if (globalStoresEnabled()) {
+    return gsGet<SystemSettings>('system_settings', { ...SYSTEM_SETTINGS_DEFAULTS });
+  }
   const db = getDb();
   if (!db.systemSettings) {
-    db.systemSettings = {
-      maintenanceMode: false,
-      maintenanceMessage: 'The platform is undergoing scheduled maintenance. Please check back shortly.',
-      announcements: [],
-      featureFlags: {
-        userRegistration: true,
-        socialOAuth: true,
-        aiRetentionEngine: true,
-        scheduledPublishing: true,
-        workspaceSharing: true,
-      },
-      security: {
-        requireEmailVerification: true,
-        sessionExpiryDays: 30,
-        maxLoginAttemptsPerMinute: 30,
-      },
-    };
+    db.systemSettings = JSON.parse(JSON.stringify(SYSTEM_SETTINGS_DEFAULTS));
     saveDatabase(db);
   }
-  return db.systemSettings;
+  return db.systemSettings as SystemSettings;
 }
 
 export function updateSystemSettings(updates: Partial<SystemSettings>): SystemSettings {
+  if (globalStoresEnabled()) {
+    const current = getSystemSettings();
+    const next: SystemSettings = {
+      ...current,
+      ...updates,
+      featureFlags: { ...current.featureFlags, ...(updates.featureFlags || {}) },
+      security: { ...current.security, ...(updates.security || {}) },
+    };
+    gsSet('system_settings', next);
+    return next;
+  }
   const db = getDb();
   const current = getSystemSettings();
   db.systemSettings = {

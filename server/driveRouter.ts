@@ -5,6 +5,7 @@ import path from 'path';
 import { requireAuth, AuthenticatedRequest } from './authRouter.ts';
 import { getOAuthConfig, encryptToken, decryptToken, storePendingAttemptAsync, getPendingAttemptAsync, removePendingAttemptAsync, ConnectionAttempt } from './oauthStore.ts';
 import { authStore } from './authStore.ts';
+import { globalStoresEnabled, gsGet, gsSet } from './globalStores.ts';
 
 export const driveRouter = express.Router();
 
@@ -31,9 +32,11 @@ const DATA_DIR = path.resolve(process.cwd(), 'data');
 const CONN_FILE = path.join(DATA_DIR, 'drive_connections.json');
 
 function loadConns(): DriveConnection[] {
+  if (globalStoresEnabled()) return gsGet<DriveConnection[]>('drive_connections', []);
   try { return JSON.parse(fs.readFileSync(CONN_FILE, 'utf8')); } catch { return []; }
 }
 function saveConns(conns: DriveConnection[]) {
+  if (globalStoresEnabled()) { gsSet('drive_connections', conns); return; }
   fs.writeFileSync(CONN_FILE, JSON.stringify(conns, null, 2));
 }
 
@@ -351,8 +354,8 @@ interface ImportJob {
   updatedAt: string;
 }
 
-function loadJobs(): ImportJob[] { try { return JSON.parse(fs.readFileSync(IMPORTS_FILE, 'utf8')); } catch { return []; } }
-function saveJobs(jobs: ImportJob[]) { fs.writeFileSync(IMPORTS_FILE, JSON.stringify(jobs, null, 2)); }
+function loadJobs(): ImportJob[] { if (globalStoresEnabled()) return gsGet<ImportJob[]>('drive_imports', []); try { return JSON.parse(fs.readFileSync(IMPORTS_FILE, 'utf8')); } catch { return []; } }
+function saveJobs(jobs: ImportJob[]) { if (globalStoresEnabled()) { gsSet('drive_imports', jobs); return; } fs.writeFileSync(IMPORTS_FILE, JSON.stringify(jobs, null, 2)); }
 function updateJob(id: string, patch: Partial<ImportJob>) {
   const jobs = loadJobs();
   const j = jobs.find((x) => x.id === id);

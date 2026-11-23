@@ -6,6 +6,7 @@ import { getDb, getWorkspaceData, saveWorkspaceData } from './saasDb.ts';
 import { sharedStateDriver } from './sharedState.ts';
 import { query } from './db/client.ts';
 import { getRepos } from './repos/index.ts';
+import { globalStoresEnabled, gsGet, gsSet } from './globalStores.ts';
 
 const isPg = () => process.env.DB_DRIVER === 'pg';
 async function wsGet(wsId: string): Promise<any> {
@@ -395,6 +396,7 @@ const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
 
 function loadDriveConnections(): any[] {
+  if (globalStoresEnabled()) return gsGet<any[]>('drive_connections', []);
   try { return JSON.parse(fs.readFileSync(DRIVE_CONN_FILE, 'utf8')); } catch { return []; }
 }
 
@@ -474,9 +476,11 @@ async function detectWorkspaceEvents(wsId: string, wf: Workflow): Promise<{ foun
 const PENDING_APPROVALS_FILE = path.join(process.cwd(), 'data', 'automation_approvals.json');
 
 export function loadApprovals(): any[] {
+  if (globalStoresEnabled()) return gsGet<any[]>('automation_approvals', []);
   try { return JSON.parse(fs.readFileSync(PENDING_APPROVALS_FILE, 'utf8')); } catch { return []; }
 }
 export function saveApprovals(a: any[]) {
+  if (globalStoresEnabled()) { gsSet('automation_approvals', a); return; }
   try { fs.writeFileSync(PENDING_APPROVALS_FILE, JSON.stringify(a, null, 2)); } catch {}
 }
 

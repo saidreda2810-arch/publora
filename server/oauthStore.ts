@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { globalStoresEnabled, gsGet, gsSet } from './globalStores.ts';
 
 export type SocialProvider = 'youtube' | 'facebook' | 'instagram' | 'tiktok';
 
@@ -143,7 +144,9 @@ export function decryptToken(encryptedToken: string): string {
 // Read/write OAuthConfig
 export function getOAuthConfig(): OAuthConfig {
   let fileConfig: Partial<OAuthConfig> = {};
-  if (fs.existsSync(CONFIG_FILE)) {
+  if (globalStoresEnabled()) {
+    fileConfig = gsGet<Partial<OAuthConfig>>('oauth_config', {});
+  } else if (fs.existsSync(CONFIG_FILE)) {
     try {
       fileConfig = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
     } catch (e) {
@@ -168,12 +171,19 @@ export function saveOAuthConfig(updated: Partial<OAuthConfig>): OAuthConfig {
     ...current,
     ...updated,
   };
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(merged, null, 2), 'utf-8');
+  if (globalStoresEnabled()) {
+    gsSet('oauth_config', merged);
+  } else {
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(merged, null, 2), 'utf-8');
+  }
   return merged;
 }
 
 // Read/write Social Accounts
 export function getAllAccounts(): SocialAccountRecord[] {
+  if (globalStoresEnabled()) {
+    return gsGet<SocialAccountRecord[]>('oauth_accounts', []);
+  }
   if (!fs.existsSync(ACCOUNTS_FILE)) {
     return [];
   }
@@ -187,6 +197,10 @@ export function getAllAccounts(): SocialAccountRecord[] {
 }
 
 export function saveAccounts(accounts: SocialAccountRecord[]): void {
+  if (globalStoresEnabled()) {
+    gsSet('oauth_accounts', accounts);
+    return;
+  }
   fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify(accounts, null, 2), 'utf-8');
 }
 
