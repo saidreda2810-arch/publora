@@ -135,6 +135,56 @@ await check('chunked/init creates PG upload session', async () => {
   return res.status === 201 && body.success === true && typeof body.sessionId === 'string';
 });
 
+// ---- brand CRUD via dedicated endpoints (exercises saveOrConflict) ----
+let brandId = '';
+await check('POST /brands creates brand', async () => {
+  const res = await post('/api/saas/brands', { name: 'CRUD Smoke Brand', color: '#123456' });
+  const body = await res.json().catch(() => ({}));
+  brandId = body.brand?.id || '';
+  return res.status === 200 && body.success === true && !!brandId;
+});
+
+await check('GET /brands lists created brand', async () => {
+  const res = await req('/api/saas/brands');
+  const body = await res.json().catch(() => ({}));
+  const brands = body.brands || body.data?.brands || [];
+  return res.status === 200 && brands.some((b: any) => b.id === brandId);
+});
+
+await check('PATCH /brands/:id updates brand', async () => {
+  const res = await req(`/api/saas/brands/${brandId}`, { method: 'PATCH', body: JSON.stringify({ color: '#654321' }) });
+  const body = await res.json().catch(() => ({}));
+  return res.status === 200 && body.success === true;
+});
+
+await check('DELETE /brands/:id removes brand', async () => {
+  const res = await req(`/api/saas/brands/${brandId}`, { method: 'DELETE' });
+  const body = await res.json().catch(() => ({}));
+  const res2 = await req('/api/saas/brands');
+  const body2 = await res2.json().catch(() => ({}));
+  const brands = body2.brands || body2.data?.brands || [];
+  return res.status === 200 && body.success === true && !brands.some((b: any) => b.id === brandId);
+});
+
+// ---- notifications + oauth accounts + history surfaces ----
+await check('GET /queue/notifications returns array', async () => {
+  const res = await req('/api/saas/queue/notifications');
+  const body = await res.json().catch(() => ({}));
+  return res.status === 200 && body.success === true && Array.isArray(body.notifications);
+});
+
+await check('GET /api/oauth/accounts returns array', async () => {
+  const res = await req('/api/oauth/accounts');
+  const body = await res.json().catch(() => ({}));
+  return res.status === 200 && body.success === true && Array.isArray(body.accounts);
+});
+
+await check('GET /history returns success', async () => {
+  const res = await req('/api/saas/history');
+  const body = await res.json().catch(() => ({}));
+  return res.status === 200 && body.success === true;
+});
+
 // ---- cleanup: self-delete account (exercises delete-request path on PG) ----
 await check('account/delete-request schedules deletion on PG', async () => {
   const res = await post('/api/saas/account/delete-request', { password, confirmText: 'DELETE' });
