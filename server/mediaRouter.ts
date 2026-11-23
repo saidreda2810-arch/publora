@@ -14,7 +14,7 @@ import {
 import {
   getUploadPolicy, planLimitBytes, workspaceUsageBytes, workspaceVideoCount,
   createSession, getSession, saveSession, deleteSession, listActiveSessions,
-  sweepExpiredSessions, activeSessionCount, sniffVideoType, chunkPath,
+  sweepExpiredSessions, activeSessionCount, sniffVideoType, storeChunk, readChunk,
   UploadSession,
 } from './uploadPolicy.ts';
 
@@ -303,7 +303,7 @@ mediaRouter.post('/upload', async (req: AuthenticatedRequest, res: Response) => 
 /* ------------------------------------------------------------------ */
 
 // POST /api/media/chunked/init — create an upload session
-mediaRouter.post('/chunked/init', (req: AuthenticatedRequest, res: Response) => {
+mediaRouter.post('/chunked/init', async (req: AuthenticatedRequest, res: Response) => {
   const workspaceId = req.workspace?.id;
   const user = req.user!;
   if (!workspaceId) return res.status(400).json({ success: false, error: 'Workspace context missing' });
@@ -311,8 +311,8 @@ mediaRouter.post('/chunked/init', (req: AuthenticatedRequest, res: Response) => 
   const policy = getUploadPolicy();
   if (!policy.uploadsEnabled) return res.status(403).json({ success: false, error: 'Uploads are disabled by the administrator.' });
   if (!policy.resumableEnabled) return res.status(400).json({ success: false, error: 'Resumable uploads are disabled.' });
-  sweepExpiredSessions(policy);
-  if (activeSessionCount() >= policy.maxConcurrentUploads * 4) {
+  await sweepExpiredSessions(policy);
+  if ((await activeSessionCount()) >= policy.maxConcurrentUploads * 4) {
     return res.status(429).json({ success: false, error: 'Too many concurrent upload sessions. Try again shortly.' });
   }
 
@@ -339,7 +339,7 @@ mediaRouter.post('/chunked/init', (req: AuthenticatedRequest, res: Response) => 
     }
   }
 
-  const session = createSession({
+  const session = await createSession({
     workspaceId, userId: user.id, userEmail: user.email,
     filename: path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, '_'),
     mimeType, sizeBytes,
@@ -350,21 +350,21 @@ mediaRouter.post('/chunked/init', (req: AuthenticatedRequest, res: Response) => 
 });
 
 // GET /api/media/chunked/:sid/status — which chunks are already stored
-mediaRouter.get('/chunked/:sid/status', (req: AuthenticatedRequest, res: Response) => {
-  const s = getSession(req.params.sid);
+mediaRouter.get('/chunked/:sid/status', async (req: AuthenticatedRequest, res: Response) => {
+  const s = await getSession(req.params.sid);
   if (!s) return res.status(404).json({ success: false, error: 'Upload session not found or expired' });
   if (s.workspaceId !== req.workspace?.id && req.user!.role !== 'platform_admin') {
     return res.status(403).json({ success: false, error: 'Access denied' });
   }
-  sweepExpiredSessions();
+  await sweepExpiredSessions();
   res.json({ success: true, received: s.received, totalChunks: s.totalChunks, chunkSize: s.chunkSize });
 });
 
 // PUT /api/media/chunked/:sid/chunk/:idx — raw octet-stream body
 mediaRouter.put('/chunked/:sid/chunk/:idx',
   express.raw({ type: 'application/octet-stream', limit: '70mb' }),
-  (req: AuthenticatedRequest, res: Response) => {
-    const s = getSession(req.params.sid);
+  async (req: AuthenticatedRequest, res: Response) => {
+    const s = await getSession(req.params.sid);
     if (!s) return res.status(404).json({ success: false, error: 'Upload session not found or expired' });
     if (s.workspaceId !== req.workspace?.id && req.user!.role !== 'platform_admin') {
       return res.status(403).json({ success: false, error: 'Access denied' });
@@ -381,15 +381,15 @@ mediaRouter.put('/chunked/:sid/chunk/:idx',
     if (buf.length !== expected) {
       return res.status(400).json({ success: false, error: `Chunk size mismatch: expected ${expected} bytes, got ${buf.length}` });
     }
-    fs.writeFileSync(chunkPath(s.id, idx), buf);
+    await storeChunk(s.id, idx, buf);
     if (!s.received.includes(idx)) { s.received.push(idx); s.received.sort((a, b) => a - b); }
-    saveSession(s);
+    await saveSession(s);
     res.json({ success: true, received: s.received.length, totalChunks: s.totalChunks });
   });
 
 // POST /api/media/chunked/:sid/complete — assemble + verify + catalog
-mediaRouter.post('/chunked/:sid/complete', (req: AuthenticatedRequest, res: Response) => {
-  const s = getSession(req.params.sid);
+mediaRouter.post('/chunked/:sid/complete', async (req: AuthenticatedRequest, res: Response) => {
+  const s = await getSession(req.params.sid);
   if (!s) return res.status(404).json({ success: false, error: 'Upload session not found or expired' });
   if (s.workspaceId !== req.workspace?.id && req.user!.role !== 'platform_admin') {
     return res.status(403).json({ success: false, error: 'Access denied' });
@@ -398,14 +398,14 @@ mediaRouter.post('/chunked/:sid/complete', (req: AuthenticatedRequest, res: Resp
     return res.status(409).json({ success: false, error: `Incomplete upload: ${s.received.length}/${s.totalChunks} chunks received`, received: s.received });
   }
 
-  // Assemble chunks into a single buffer (sessions stay on disk under .sessions/).
+  // Assemble chunks into a single buffer (disk in JSON mode, PG bytea in pg mode).
   const parts: Buffer[] = [];
   for (let i = 0; i < s.totalChunks; i++) {
-    const chunkFile = chunkPath(s.id, i);
-    if (!fs.existsSync(chunkFile)) {
+    const chunk = await readChunk(s.id, i);
+    if (!chunk) {
       return res.status(409).json({ success: false, error: `Missing chunk ${i}` });
     }
-    parts.push(fs.readFileSync(chunkFile));
+    parts.push(chunk);
   }
   const assembled = Buffer.concat(parts);
   if (assembled.length !== s.sizeBytes) {
@@ -413,7 +413,7 @@ mediaRouter.post('/chunked/:sid/complete', (req: AuthenticatedRequest, res: Resp
   }
   const head = assembled.subarray(0, 16);
   if (!sniffVideoType(head)) {
-    deleteSession(s.id);
+    await deleteSession(s.id);
     return res.status(400).json({ success: false, error: 'File content does not match a supported video format.' });
   }
 
@@ -421,7 +421,7 @@ mediaRouter.post('/chunked/:sid/complete', (req: AuthenticatedRequest, res: Resp
     workspaceId: s.workspaceId, userId: s.userId, buffer: assembled,
     originalName: s.filename, mimeType: s.mimeType,
   }).then(async (asset) => {
-    deleteSession(s.id);
+    await deleteSession(s.id);
     await authStore.logAudit({
       workspaceId: s.workspaceId, userId: s.userId, userEmail: s.userEmail,
       action: 'media_uploaded',
@@ -432,13 +432,13 @@ mediaRouter.post('/chunked/:sid/complete', (req: AuthenticatedRequest, res: Resp
 });
 
 // DELETE /api/media/chunked/:sid — cancel/abandon session
-mediaRouter.delete('/chunked/:sid', (req: AuthenticatedRequest, res: Response) => {
-  const s = getSession(req.params.sid);
+mediaRouter.delete('/chunked/:sid', async (req: AuthenticatedRequest, res: Response) => {
+  const s = await getSession(req.params.sid);
   if (!s) return res.status(404).json({ success: false, error: 'Session not found' });
   if (s.workspaceId !== req.workspace?.id && req.user!.role !== 'platform_admin') {
     return res.status(403).json({ success: false, error: 'Access denied' });
   }
-  deleteSession(s.id);
+  await deleteSession(s.id);
   res.json({ success: true, message: 'Upload session cancelled' });
 });
 

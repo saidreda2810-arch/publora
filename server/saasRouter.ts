@@ -1401,7 +1401,7 @@ saasRouter.get('/admin/storage-details', requireRole(['god', 'super_admin', 'pla
     .slice(0, 10)
     .map((m) => ({ id: m.id, name: m.originalName, sizeBytes: m.sizeBytes, workspaceId: m.workspaceId, createdAt: m.createdAt }));
 
-  const sessions = listActiveSessions().map((s) => ({
+  const sessions = (await listActiveSessions()).map((s) => ({
     id: s.id, filename: s.filename, sizeBytes: s.sizeBytes,
     receivedChunks: s.received.length, totalChunks: s.totalChunks,
     workspaceId: s.workspaceId, ageMinutes: Math.round((Date.now() - s.createdAt) / 60000),
