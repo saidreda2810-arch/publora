@@ -579,9 +579,25 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
 
           <div className="flex items-center space-x-2 text-xs">
-            <span className="text-[var(--text-muted)] hidden sm:inline">PUBLORA</span>
+            <a
+              href={pathForTab('dashboard')}
+              onClick={(e) => { e.preventDefault(); setActiveTab('dashboard'); }}
+              className="text-[var(--text-muted)] hidden sm:inline hover:text-[var(--text-primary)] transition"
+            >
+              PUBLORA
+            </a>
             <span className="text-[var(--text-muted)] hidden sm:inline">/</span>
-            <span className="font-semibold text-[var(--text-primary)]">{currentTabLabel}</span>
+            {activeTab !== 'profile' ? (
+              <a
+                href={pathForTab(activeTab)}
+                onClick={(e) => { e.preventDefault(); setActiveTab(activeTab); }}
+                className="font-semibold text-[var(--text-primary)] hover:text-[var(--accent-primary)] transition"
+              >
+                {currentTabLabel}
+              </a>
+            ) : (
+              <span className="font-semibold text-[var(--text-primary)]">{currentTabLabel}</span>
+            )}
           </div>
         </div>
 
