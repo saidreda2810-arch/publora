@@ -53,6 +53,10 @@ import {
 import fs from 'fs';
 import path from 'path';
 
+// Test-only secrets — production code has no built-in fallback key anymore.
+process.env.NODE_ENV = process.env.NODE_ENV || 'test';
+process.env.OAUTH_ENCRYPTION_KEY = process.env.OAUTH_ENCRYPTION_KEY || 'test-only-oauth-encryption-key-0123456789';
+
 interface TestResult {
   suite: string;
   name: string;
@@ -124,7 +128,7 @@ async function main() {
     const originalSecret = 'ya29.a0ARrdaM8xSecretYouTubeRefreshToken12345';
     const encrypted = encryptToken(originalSecret);
 
-    assert(encrypted.includes(':'), 'Encrypted token format must contain IV:AuthTag:Ciphertext');
+    assert(encrypted.startsWith('{') && JSON.parse(encrypted).v === 2, 'Encrypted token must be a v2 GCM envelope');
     assert(encrypted !== originalSecret, 'Ciphertext must not match plaintext');
 
     const decrypted = decryptToken(encrypted);

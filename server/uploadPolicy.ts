@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { globalStoresEnabled, gsGet, gsSet } from './globalStores.ts';
+import { usageBytes, videoCount } from './mediaAssets.ts';
 
 /**
  * Centralized video upload policy — persisted in data/upload_policy.json.
@@ -45,24 +46,30 @@ export const DEFAULT_UPLOAD_POLICY: UploadPolicy = {
   resumableEnabled: true,
 };
 
-const POLICY_FILE = path.resolve(process.cwd(), 'data', 'upload_policy.json');
-const SESSIONS_DIR = path.resolve(process.cwd(), 'data', 'uploads', '.sessions');
-const UPLOADS_DIR = path.resolve(process.cwd(), 'data', 'uploads');
-const CATALOG_FILE = path.resolve(process.cwd(), 'data', 'media_catalog.json');
-
 export function getUploadPolicy(): UploadPolicy {
+  const applyEnv = (p: UploadPolicy): UploadPolicy => {
+    // Env ceiling: MAX_UPLOAD_SIZE_BYTES caps the global max; ALLOWED_MIME_TYPES
+    // intersects the policy allow-list (restriction only, never widening).
+    const envMax = envMaxUploadBytes();
+    const envMime = envAllowedMimeTypes();
+    return {
+      ...p,
+      globalMaxBytes: envMax ? Math.min(p.globalMaxBytes, envMax) : p.globalMaxBytes,
+      allowedMimeTypes: envMime ? p.allowedMimeTypes.filter((m) => envMime.includes(m.toLowerCase())) : p.allowedMimeTypes,
+    };
+  };
   if (globalStoresEnabled()) {
     const raw = gsGet<any>('upload_policy', null);
-    if (raw) return { ...DEFAULT_UPLOAD_POLICY, ...raw, planLimitsBytes: { ...DEFAULT_UPLOAD_POLICY.planLimitsBytes, ...(raw.planLimitsBytes || {}) } };
-    return { ...DEFAULT_UPLOAD_POLICY };
+    if (raw) return applyEnv({ ...DEFAULT_UPLOAD_POLICY, ...raw, planLimitsBytes: { ...DEFAULT_UPLOAD_POLICY.planLimitsBytes, ...(raw.planLimitsBytes || {}) } });
+    return applyEnv({ ...DEFAULT_UPLOAD_POLICY });
   }
   try {
     if (fs.existsSync(POLICY_FILE)) {
       const raw = JSON.parse(fs.readFileSync(POLICY_FILE, 'utf-8'));
-      return { ...DEFAULT_UPLOAD_POLICY, ...raw, planLimitsBytes: { ...DEFAULT_UPLOAD_POLICY.planLimitsBytes, ...(raw.planLimitsBytes || {}) } };
+      return applyEnv({ ...DEFAULT_UPLOAD_POLICY, ...raw, planLimitsBytes: { ...DEFAULT_UPLOAD_POLICY.planLimitsBytes, ...(raw.planLimitsBytes || {}) } });
     }
   } catch {}
-  return { ...DEFAULT_UPLOAD_POLICY };
+  return applyEnv({ ...DEFAULT_UPLOAD_POLICY });
 }
 
 export function updateUploadPolicy(updates: Partial<UploadPolicy>): { ok: boolean; error?: string; policy?: UploadPolicy } {
@@ -112,25 +119,24 @@ export function planLimitBytes(plan: string | undefined, policy = getUploadPolic
   return Math.min(effective, policy.globalMaxBytes || effective);
 }
 
-/** Total bytes stored for a workspace — from media_assets records (WP2). */
-export function workspaceUsageBytes(workspaceId: string): number {
+/**
+ * Total bytes stored for a workspace — from media_assets records (WP2).
+ * Returns null when usage cannot be determined; callers MUST treat null as
+ * "unknown" and fail closed for new uploads (never assume zero consumption).
+ */
+export function workspaceUsageBytes(workspaceId: string): number | null {
   try {
-    // Lazy require to avoid a module cycle at import time.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { usageBytes } = require('./mediaAssets.ts');
     return usageBytes(workspaceId);
   } catch {
-    return 0;
+    return null;
   }
 }
 
-export function workspaceVideoCount(workspaceId: string): number {
+export function workspaceVideoCount(workspaceId: string): number | null {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { videoCount } = require('./mediaAssets.ts');
     return videoCount(workspaceId);
   } catch {
-    return 0;
+    return null;
   }
 }
 
@@ -157,6 +163,7 @@ export interface UploadSession {
 // chunk payloads in upload_session_chunks — safe across multiple instances.
 // Otherwise the legacy per-instance disk layout under data/uploads/.sessions.
 import { query } from './db/client.ts';
+import { UPLOAD_POLICY_FILE as POLICY_FILE, UPLOAD_SESSIONS_DIR as SESSIONS_DIR, UPLOADS_DIR, MEDIA_CATALOG_FILE as CATALOG_FILE, envMaxUploadBytes, envAllowedMimeTypes } from './config.ts';
 const usePgSessions = () => process.env.DB_DRIVER === 'pg';
 
 function sessionDir(id: string) { return path.join(SESSIONS_DIR, id); }
@@ -246,13 +253,16 @@ export async function createSession(input: Omit<UploadSession, 'id' | 'received'
   if (usePgSessions()) {
     try {
       const ttlMs = getUploadPolicy().sessionTtlMinutes * 60 * 1000;
-      await query(
+      const r = await query(
         `INSERT INTO upload_sessions(id,workspace_id,user_id,user_email,filename,mime_type,size_bytes,chunk_size,total_chunks,received_chunks,status,expires_at)
          SELECT $1, w.id, u.id, $4, $5, $6, $7, $8, $9, '[]', 'active', now() + ($10 || ' milliseconds')::interval
          FROM workspaces w, users u
          WHERE (w.legacy_id=$2 OR w.id::text=$2) AND (u.legacy_id=$3 OR u.id::text=$3)`,
         [id, input.workspaceId, input.userId, input.userEmail, input.filename, input.mimeType, input.sizeBytes, input.chunkSize, input.totalChunks, String(ttlMs)],
       );
+      if (r.rowCount !== 1) {
+        throw new Error(`upload session not created — workspace or user not found (${input.workspaceId}/${input.userId})`);
+      }
     } catch (e) {
       console.error('[uploadPolicy] pg createSession failed:', e);
       throw e;

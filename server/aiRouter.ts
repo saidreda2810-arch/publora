@@ -3,6 +3,7 @@ import { GoogleGenAI } from '@google/genai';
 import { requireAuth, AuthenticatedRequest } from './authRouter.ts';
 import { getWorkspaceData } from './saasDb.ts';
 import { getRepos } from './repos/index.ts';
+import { UPLOADS_DIR } from './config.ts';
 import fs from 'fs';
 import path from 'path';
 
@@ -368,7 +369,7 @@ aiRouter.post('/analyze-video', async (req: Request, res: Response) => {
         const video = (wsData.videos || []).find((v: any) => v.id === videoId);
         const fileName = video?.fileName;
         if (fileName) {
-          const UPLOADS = path.resolve(process.cwd(), 'data', 'uploads');
+          const UPLOADS = UPLOADS_DIR;
           const candidates = [
             path.join(UPLOADS, fileName),
             ...(video?.fileUrl ? [path.join(UPLOADS, path.basename(video.fileUrl))] : []),

@@ -29,9 +29,10 @@ export interface MailResult {
   error?: string;
 }
 
-let transporter: nodemailer.Transporter | null | undefined;
+type Transporter = ReturnType<typeof nodemailer.createTransport>;
+let transporter: Transporter | null | undefined;
 
-function getTransporter(): nodemailer.Transporter | null {
+function getTransporter(): Transporter | null {
   if (transporter !== undefined) return transporter;
   const host = process.env.SMTP_HOST;
   if (!host) {
@@ -96,8 +97,10 @@ export async function sendMail(msg: MailMessage): Promise<MailResult> {
   const from = process.env.MAIL_FROM || 'SRA Publisher <no-reply@localhost>';
 
   if (!t) {
-    // Honest fallback: no SMTP configured — log the intent, report not sent.
-    console.log(`[mailer:log] to=${msg.to} subject="${msg.subject}"\n${msg.text}`);
+    // Honest fallback: no SMTP configured — log metadata ONLY. Never print
+    // msg.text/msg.html: they contain verification tokens, magic links, and
+    // OTP codes that must not land in logs.
+    console.log(`[mailer:log] to=${msg.to} template=${msg.template || 'generic'} subject="${msg.subject}" — NOT SENT (SMTP_HOST unset)`);
     return { sent: false, provider: 'log' };
   }
 

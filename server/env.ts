@@ -21,6 +21,10 @@ if (NODE_ENV === 'production') {
   if (process.env.ENABLE_DEMO_LOGIN === 'true') {
     errors.push('ENABLE_DEMO_LOGIN must never be true in production');
   }
+  const oek = process.env.OAUTH_ENCRYPTION_KEY || '';
+  if (!oek || oek === 'sra_social_publisher_secret_key_32_bytes_salt!' || oek.trim().length < 32) {
+    errors.push('OAUTH_ENCRYPTION_KEY must be set to a strong secret (≥32 chars, or 32-byte hex/base64) in production');
+  }
 }
 
 if (errors.length > 0) {

@@ -391,7 +391,8 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 
-const DRIVE_CONN_FILE = path.join(process.cwd(), 'data', 'drive_connections.json');
+import { DATA_DIR } from './config.ts';
+const DRIVE_CONN_FILE = path.join(DATA_DIR, 'drive_connections.json');
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
 
@@ -473,7 +474,7 @@ async function detectWorkspaceEvents(wsId: string, wf: Workflow): Promise<{ foun
 
 // ===================== PHASE 6 — DELAYS, APPROVALS, NOTIFICATIONS, LIMITS =====================
 
-const PENDING_APPROVALS_FILE = path.join(process.cwd(), 'data', 'automation_approvals.json');
+const PENDING_APPROVALS_FILE = path.join(DATA_DIR, 'automation_approvals.json');
 
 export function loadApprovals(): any[] {
   if (globalStoresEnabled()) return gsGet<any[]>('automation_approvals', []);

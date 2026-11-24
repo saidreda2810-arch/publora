@@ -91,7 +91,7 @@ export interface ConnectionAttempt {
   createdAt: number;
 }
 
-const DATA_DIR = path.resolve(process.cwd(), 'data');
+import { DATA_DIR } from './config.ts';
 const ACCOUNTS_FILE = path.join(DATA_DIR, 'social_connections.json');
 const CONFIG_FILE = path.join(DATA_DIR, 'oauth_config.json');
 
@@ -113,32 +113,114 @@ setInterval(() => {
   }
 }, 15 * 60 * 1000);
 
-// Basic AES-256 encryption helper for sensitive tokens
-const ENCRYPTION_SECRET = process.env.OAUTH_ENCRYPTION_KEY || 'sra_social_publisher_secret_key_32_bytes_salt!';
-const KEY = crypto.scryptSync(ENCRYPTION_SECRET, 'salt', 32);
+// Token encryption — AES-256-GCM with a versioned envelope.
+//
+// Write format (v2):
+//   {"v":2,"kid":"<key fingerprint>","iv":"<b64>","tag":"<b64>","data":"<b64>"}
+//
+// Key resolution for OAUTH_ENCRYPTION_KEY:
+//   - 64-char hex or base64 decoding to exactly 32 bytes → used directly.
+//   - any other non-empty string ≥ 32 chars → passphrase, stretched via
+//     scrypt with a domain separator.
+// There is NO built-in fallback secret: without the env var, encryption
+// fails loudly and decryption returns '' (callers treat as reconnect-needed).
+
+function keyBytesFromEnv(): Buffer | null {
+  const raw = process.env.OAUTH_ENCRYPTION_KEY;
+  if (!raw || raw === 'sra_social_publisher_secret_key_32_bytes_salt!') return null;
+  const trimmed = raw.trim();
+  if (/^[0-9a-fA-F]{64}$/.test(trimmed)) return Buffer.from(trimmed, 'hex');
+  // Strict base64 → exactly 32 bytes?
+  if (/^[A-Za-z0-9+/]+={0,2}$/.test(trimmed) && trimmed.length % 4 === 0) {
+    const b64 = Buffer.from(trimmed, 'base64');
+    if (b64.length === 32 && b64.toString('base64') === trimmed) return b64;
+  }
+  if (trimmed.length >= 32) return crypto.scryptSync(trimmed, 'publora-oauth-v2', 32);
+  return null;
+}
+
+let cachedKey: Buffer | null | undefined;
+function activeKey(): Buffer | null {
+  if (cachedKey === undefined) cachedKey = keyBytesFromEnv();
+  return cachedKey;
+}
+
+/** Key fingerprint used as envelope `kid` — identifies which key sealed the data. */
+function keyId(key: Buffer): string {
+  return 'k_' + crypto.createHash('sha256').update(key).digest('hex').slice(0, 12);
+}
+
+/** Legacy v1 key — only used to READ old iv:data CBC ciphertexts. */
+function legacyKey(): Buffer | null {
+  const raw = process.env.OAUTH_ENCRYPTION_KEY;
+  if (!raw || raw === 'sra_social_publisher_secret_key_32_bytes_salt!') return null;
+  return crypto.scryptSync(raw.trim(), 'salt', 32);
+}
 
 export function encryptToken(token: string): string {
   if (!token) return '';
-  const iv = crypto.randomBytes(16);
-  const cipher = crypto.createCipheriv('aes-256-cbc', KEY, iv);
-  let encrypted = cipher.update(token, 'utf8', 'hex');
-  encrypted += cipher.final('hex');
-  return `${iv.toString('hex')}:${encrypted}`;
+  const key = activeKey();
+  if (!key) throw new Error('OAUTH_ENCRYPTION_KEY is not configured — cannot encrypt token.');
+  const iv = crypto.randomBytes(12); // GCM standard nonce
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const data = Buffer.concat([cipher.update(token, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return JSON.stringify({
+    v: 2,
+    kid: keyId(key),
+    iv: iv.toString('base64'),
+    tag: tag.toString('base64'),
+    data: data.toString('base64'),
+  });
+}
+
+function decryptV2(envelope: any, key: Buffer): string {
+  const iv = Buffer.from(envelope.iv, 'base64');
+  const tag = Buffer.from(envelope.tag, 'base64');
+  const data = Buffer.from(envelope.data, 'base64');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
+}
+
+function decryptV1Legacy(packed: string): string {
+  const key = legacyKey();
+  if (!key) return '';
+  const [ivHex, dataHex] = packed.split(':');
+  const decipher = crypto.createDecipheriv('aes-256-cbc', key, Buffer.from(ivHex, 'hex'));
+  return decipher.update(dataHex, 'hex', 'utf8') + decipher.final('utf8');
 }
 
 export function decryptToken(encryptedToken: string): string {
-  if (!encryptedToken || !encryptedToken.includes(':')) return '';
+  if (!encryptedToken) return '';
   try {
-    const [ivHex, dataHex] = encryptedToken.split(':');
-    const iv = Buffer.from(ivHex, 'hex');
-    const decipher = crypto.createDecipheriv('aes-256-cbc', KEY, iv);
-    let decrypted = decipher.update(dataHex, 'hex', 'utf8');
-    decrypted += decipher.final('utf8');
-    return decrypted;
-  } catch (err) {
-    console.error('Failed to decrypt token:', err);
+    if (encryptedToken.startsWith('{')) {
+      const envelope = JSON.parse(encryptedToken);
+      if (envelope?.v !== 2) return '';
+      const key = activeKey();
+      if (!key || envelope.kid !== keyId(key)) return ''; // unknown key — reconnect required
+      return decryptV2(envelope, key);
+    }
+    // Legacy AES-256-CBC "iv:data" format — read-only migration path.
+    if (encryptedToken.includes(':')) return decryptV1Legacy(encryptedToken);
+    return '';
+  } catch {
+    // Auth-tag mismatch / malformed input — never leak details upward.
     return '';
   }
+}
+
+/**
+ * Re-encrypt a stored token into the v2 format when it is still v1.
+ * Returns the (possibly unchanged) stored value. Used by the migration
+ * script; safe to call on already-v2 values (returns input unchanged).
+ */
+export function migrateTokenToV2(stored: string): string {
+  if (!stored) return stored;
+  if (stored.startsWith('{')) return stored; // already v2
+  const plain = decryptToken(stored);
+  if (!plain) return stored; // undecryptable — leave untouched for review
+  return encryptToken(plain);
 }
 
 // Read/write OAuthConfig

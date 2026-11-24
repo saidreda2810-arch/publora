@@ -28,7 +28,7 @@ interface DriveConnection {
   lastSyncAt?: string;
 }
 
-const DATA_DIR = path.resolve(process.cwd(), 'data');
+import { DATA_DIR } from './config.ts';
 const CONN_FILE = path.join(DATA_DIR, 'drive_connections.json');
 
 function loadConns(): DriveConnection[] {
@@ -388,6 +388,9 @@ driveRouter.post('/import', requireAuth, async (req: AuthenticatedRequest, res: 
   // Quota pre-check (policy-driven, server-side)
   const policy = getUploadPolicy();
   const used = workspaceUsageBytes(wsId);
+  if (used === null) {
+    return res.status(503).json({ success: false, error: 'Storage usage statistics are unavailable — import rejected. Retry shortly.' });
+  }
   const quotaBytes = policy.workspaceQuotaBytes > 0 ? policy.workspaceQuotaBytes : policy.globalMaxBytes;
 
   const token = await getValidToken(conn);

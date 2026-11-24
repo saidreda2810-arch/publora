@@ -9,12 +9,12 @@
  * Storage bytes live in StorageProvider (local dir or S3), never in DB rows.
  */
 import fs from 'fs';
+import { DATA_DIR } from './config.ts';
 import path from 'path';
 import crypto from 'crypto';
 import { getStorageProvider } from './storage/storageProvider.ts';
 import { globalStoresEnabled, gsGet, gsSet } from './globalStores.ts';
 
-const DATA_DIR = path.resolve(process.env.SRA_DATA_DIR || path.join(process.cwd(), 'data'));
 const ASSETS_FILE = path.join(DATA_DIR, 'media_assets.json');
 const LEGACY_CATALOG = path.join(DATA_DIR, 'media_catalog.json');
 const SIGNING_KEY_FILE = path.join(DATA_DIR, '.media_signing_key');

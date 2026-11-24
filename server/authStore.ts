@@ -157,7 +157,7 @@ const json = {
       passwordHash: db.hashPassword(db.generateToken(16), salt),
       salt,
       fullName: input.fullName,
-      role: (d.users.length === 0 ? 'platform_admin' : 'user') as any,
+      role: 'user' as any,
       isEmailVerified: true,
       status: 'active',
       createdAt: new Date().toISOString(),
@@ -374,10 +374,10 @@ const pg = {
   async updateUser(id: string, updates: Partial<User>) {
     const target = await pg.findUserById(id);
     if (!target) return undefined;
-    const isGod = target.email.toLowerCase() === db.GOD_OWNER_EMAIL.toLowerCase() || target.role === 'god';
+    const isGod = db.isGodOwnerUser(target);
     if (isGod) {
       if (updates.role && updates.role !== 'god') throw new Error('IMMUTABLE: The Primary GOD Owner role cannot be demoted, modified, or revoked.');
-      if (updates.email && updates.email.toLowerCase() !== db.GOD_OWNER_EMAIL.toLowerCase()) throw new Error('IMMUTABLE: The Primary GOD Owner email cannot be altered.');
+      if (updates.email && updates.email.toLowerCase() !== target.email.toLowerCase()) throw new Error('IMMUTABLE: The Primary GOD Owner email cannot be altered.');
       if (updates.status && updates.status === 'suspended') throw new Error('IMMUTABLE: The Primary GOD Owner account cannot be suspended.');
     } else if (updates.role === 'god') {
       throw new Error('RESERVED: The GOD role is permanently reserved for the Primary Owner.');
@@ -411,7 +411,7 @@ const pg = {
   async deleteUser(id: string) {
     const target = await pg.findUserById(id);
     if (!target) return { success: false, error: 'User not found.' };
-    if (target.email.toLowerCase() === db.GOD_OWNER_EMAIL.toLowerCase() || target.role === 'god') {
+    if (db.isGodOwnerUser(target)) {
       return { success: false, error: 'PROTECTED: The Primary GOD Owner account cannot be deleted under any circumstances.' };
     }
     await withTransaction(async (c) => {
@@ -424,16 +424,13 @@ const pg = {
   },
   async registerUser(input: { email: string; password: string; fullName: string }) {
     const cleanEmail = input.email.toLowerCase().trim();
-    const isGod = cleanEmail === db.GOD_OWNER_EMAIL.toLowerCase();
     return withTransaction(async (c) => {
-      const count = Number((await c.query('SELECT count(*)::int AS n FROM users')).rows[0].n);
-      const role = isGod ? 'god' : (count === 0 ? 'platform_admin' : 'user');
       const salt = db.generateSalt();
       const userLegacy = rid('usr');
       const u = (await c.query(
         `INSERT INTO users(legacy_id,email,password_hash,password_salt,full_name,role,status,is_email_verified,created_at,updated_at,last_login_at)
-         VALUES($1,$2,$3,$4,$5,$6,'active',$7,now(),now(),now()) RETURNING id`,
-        [userLegacy, cleanEmail, db.hashPassword(input.password, salt), salt, input.fullName.trim(), role, isGod],
+         VALUES($1,$2,$3,$4,$5,$6,'active',false,now(),now(),now()) RETURNING id`,
+        [userLegacy, cleanEmail, db.hashPassword(input.password, salt), salt, input.fullName.trim(), 'user'],
       )).rows[0];
       // verification token (hash only)
       const rawToken = db.generateToken(24);
@@ -452,8 +449,8 @@ const pg = {
           w = (await c.query(
             `INSERT INTO workspaces(legacy_id,name,slug,owner_id,plan,settings,state_version,created_at,updated_at)
              VALUES($1,$2,$3,$4,$5,$6,0,now(),now()) RETURNING id`,
-            [wsLegacy, wsName, slug, u.id, isGod ? 'enterprise' : 'free',
-             JSON.stringify({ defaultTimezone: 'UTC', defaultSchedulingMode: 'assisted', maxDailyPosts: isGod ? 20 : 2, autoOptimizeTitles: true, onboardingCompleted: false })],
+            [wsLegacy, wsName, slug, u.id, 'free',
+             JSON.stringify({ defaultTimezone: 'UTC', defaultSchedulingMode: 'assisted', maxDailyPosts: 2, autoOptimizeTitles: true, onboardingCompleted: false })],
           )).rows[0];
           break;
         } catch (e: any) {
@@ -469,29 +466,22 @@ const pg = {
       await c.query(
         `INSERT INTO audit_logs(workspace_id,user_id,user_email,action,details,created_at)
          VALUES($1,$2,$3,$4,$5,now())`,
-        [w.id, u.id, cleanEmail,
-         isGod ? 'primary_god_owner_registered' : 'user_registered',
-         isGod ? `Primary GOD Owner (${cleanEmail}) registered and assigned supreme platform authority.` : `User ${cleanEmail} registered and default workspace created.`],
+        [w.id, u.id, cleanEmail, 'user_registered',
+         `User ${cleanEmail} registered and default workspace created.`],
       );
       const user = mapUser((await c.query(`SELECT ${USER_COLS} FROM users WHERE id=$1`, [u.id])).rows[0]);
       return { user, verificationToken: rawToken };
-    }).then(async (res: any) => {
-      if (isGod && !db.getSystemSettings().primaryOwnerUserId) {
-        db.updateSystemSettings({ primaryOwnerUserId: res.user.id } as any);
-      }
-      return res;
     });
   },
   async createMagicUser(input: { email: string; fullName: string }) {
     const email = input.email.toLowerCase().trim();
     return withTransaction(async (c) => {
-      const count = Number((await c.query('SELECT count(*)::int AS n FROM users')).rows[0].n);
       const salt = db.generateSalt();
       const userLegacy = rid('usr');
       const u = (await c.query(
         `INSERT INTO users(legacy_id,email,password_hash,password_salt,full_name,role,status,is_email_verified,created_at,updated_at,last_login_at)
          VALUES($1,$2,$3,$4,$5,$6,'active',true,now(),now(),now()) RETURNING id`,
-        [userLegacy, email, db.hashPassword(db.generateToken(16), salt), salt, input.fullName, count === 0 ? 'platform_admin' : 'user'],
+        [userLegacy, email, db.hashPassword(db.generateToken(16), salt), salt, input.fullName, 'user'],
       )).rows[0];
       const wsLegacy = rid('ws');
       const wsName = `${input.fullName}'s Workspace`;

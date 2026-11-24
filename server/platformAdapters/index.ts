@@ -20,7 +20,7 @@ const ADAPTERS: Record<string, PlatformAdapter> = {
   meta: metaAdapter,
 };
 
-const UPLOADS_DIR = path.resolve(process.cwd(), 'data', 'uploads');
+import { UPLOADS_DIR } from '../config.ts';
 
 /**
  * Resolve the local video file for a post.

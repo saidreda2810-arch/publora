@@ -21,8 +21,7 @@ import {
 
 export const mediaRouter = express.Router();
 
-const UPLOADS_DIR = path.resolve(process.cwd(), 'data', 'uploads');
-const MEDIA_CATALOG_FILE = path.resolve(process.cwd(), 'data', 'media_catalog.json');
+import { UPLOADS_DIR, MEDIA_CATALOG_FILE } from './config.ts';
 
 // Ensure upload directory exists
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -142,7 +141,7 @@ mediaRouter.get('/policy', (req: AuthenticatedRequest, res: Response) => {
   const maxBytes = planLimitBytes(plan, policy);
   const usedBytes = workspaceUsageBytes(workspaceId);
   const quotaBytes = policy.workspaceQuotaBytes;
-  const remainingBytes = quotaBytes > 0 ? Math.max(0, quotaBytes - usedBytes) : null;
+  const remainingBytes = quotaBytes > 0 && usedBytes !== null ? Math.max(0, quotaBytes - usedBytes) : null;
   res.json({
     success: true,
     policy: {
@@ -256,6 +255,9 @@ mediaRouter.post('/upload', async (req: AuthenticatedRequest, res: Response) => 
   }
   if (policy.workspaceQuotaBytes > 0) {
     const used = workspaceUsageBytes(workspaceId);
+    if (used === null) {
+      return res.status(503).json({ success: false, error: 'Storage usage statistics are unavailable — upload rejected. Retry shortly.' });
+    }
     if (used + actualSize > policy.workspaceQuotaBytes) {
       return res.status(413).json({
         success: false,
@@ -335,6 +337,9 @@ mediaRouter.post('/chunked/init', async (req: AuthenticatedRequest, res: Respons
   }
   if (policy.workspaceQuotaBytes > 0) {
     const used = workspaceUsageBytes(workspaceId);
+    if (used === null) {
+      return res.status(503).json({ success: false, error: 'Storage usage statistics are unavailable — upload rejected. Retry shortly.' });
+    }
     if (used + sizeBytes > policy.workspaceQuotaBytes) {
       return res.status(413).json({ success: false, error: `Workspace storage quota exceeded (${fmtBytes(used)} of ${fmtBytes(policy.workspaceQuotaBytes)} used).` });
     }

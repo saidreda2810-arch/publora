@@ -12,9 +12,18 @@
  *   S3_FORCE_PATH_STYLE 'true' for MinIO
  *   S3_PUBLIC_BASE_URL optional public/CDN base for unsigned URLs
  */
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  DeleteObjectCommand,
+  ListObjectsV2Command,
+} from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { STORAGE_LOCAL_DIR } from '../config.ts';
 
 export interface StorageProvider {
   put(key: string, body: Buffer | Uint8Array, contentType?: string): Promise<void>;
@@ -32,8 +41,16 @@ export class LocalStorageProvider implements StorageProvider {
     fs.mkdirSync(rootDir, { recursive: true });
   }
   private resolve(key: string): string {
-    const p = path.resolve(this.rootDir, key);
-    if (!p.startsWith(path.resolve(this.rootDir))) throw new Error('storage key escapes root');
+    const root = path.resolve(this.rootDir);
+    if (key === '.') return root; // list() root marker
+    if (!key || path.isAbsolute(key) || key.split(/[\\/]/).includes('..')) {
+      throw new Error('invalid storage key');
+    }
+    const p = path.resolve(root, key);
+    const rel = path.relative(root, p);
+    if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) {
+      throw new Error('storage key escapes root');
+    }
     return p;
   }
   async put(key: string, body: Buffer | Uint8Array, _contentType?: string): Promise<void> {
@@ -78,7 +95,7 @@ export class LocalStorageProvider implements StorageProvider {
 // Minimal S3 client using aws4fetch-style manual signing is heavy; use the
 // official AWS SDK v3 if installed, otherwise fail fast with a clear error.
 export class S3StorageProvider implements StorageProvider {
-  private client: any;
+  private client: S3Client;
   private bucket: string;
   private publicBase?: string;
 
@@ -92,48 +109,53 @@ export class S3StorageProvider implements StorageProvider {
     }
     this.bucket = bucket;
     this.publicBase = env.S3_PUBLIC_BASE_URL;
-    // Dynamic import keeps LocalStorage usable without the SDK installed.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { S3Client } = require('@aws-sdk/client-s3');
     this.client = new S3Client({
       endpoint,
       region: env.S3_REGION || 'auto',
       forcePathStyle: env.S3_FORCE_PATH_STYLE === 'true',
       credentials: { accessKeyId, secretAccessKey },
     });
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const cmds = require('@aws-sdk/client-s3');
-    this.cmds = cmds;
   }
-  private cmds: any;
 
   async put(key: string, body: Buffer | Uint8Array, contentType?: string): Promise<void> {
-    await this.client.send(new this.cmds.PutObjectCommand({
+    await this.client.send(new PutObjectCommand({
       Bucket: this.bucket, Key: key, Body: body, ContentType: contentType,
     }));
   }
   async getStream(key: string): Promise<NodeJS.ReadableStream> {
-    const res = await this.client.send(new this.cmds.GetObjectCommand({ Bucket: this.bucket, Key: key }));
+    const res = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
     return res.Body as NodeJS.ReadableStream;
   }
   async head(key: string) {
     try {
-      const res = await this.client.send(new this.cmds.HeadObjectCommand({ Bucket: this.bucket, Key: key }));
+      const res = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
       return { size: res.ContentLength ?? 0, contentType: res.ContentType };
-    } catch { return null; }
+    } catch (e: any) {
+      // Only a genuine NotFound maps to null — auth/network/server errors propagate.
+      const status = e?.$metadata?.httpStatusCode;
+      const name = e?.name || '';
+      if (status === 404 || name === 'NotFound' || name === 'NoSuchKey') return null;
+      throw e;
+    }
   }
   async delete(key: string): Promise<void> {
-    await this.client.send(new this.cmds.DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
   }
   async signedUrl(key: string, ttlSeconds: number): Promise<string> {
     if (this.publicBase) return `${this.publicBase.replace(/\/$/, '')}/${key.split('/').map(encodeURIComponent).join('/')}`;
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
-    return getSignedUrl(this.client, new this.cmds.GetObjectCommand({ Bucket: this.bucket, Key: key }), { expiresIn: ttlSeconds });
+    return getSignedUrl(this.client, new GetObjectCommand({ Bucket: this.bucket, Key: key }), { expiresIn: ttlSeconds });
   }
   async list(prefix: string): Promise<string[]> {
-    const res = await this.client.send(new this.cmds.ListObjectsV2Command({ Bucket: this.bucket, Prefix: prefix }));
-    return (res.Contents || []).map((o: any) => o.Key).filter(Boolean);
+    const out: string[] = [];
+    let token: string | undefined;
+    do {
+      const res = await this.client.send(new ListObjectsV2Command({
+        Bucket: this.bucket, Prefix: prefix, ContinuationToken: token,
+      }));
+      for (const o of res.Contents || []) if (o.Key) out.push(o.Key);
+      token = res.IsTruncated ? res.NextContinuationToken : undefined;
+    } while (token);
+    return out;
   }
 }
 
@@ -147,7 +169,7 @@ export function getStorageProvider(): StorageProvider {
   if (kind === 's3') {
     cached = new S3StorageProvider();
   } else {
-    const root = process.env.STORAGE_LOCAL_DIR || path.resolve(process.cwd(), 'data', 'storage');
+    const root = STORAGE_LOCAL_DIR;
     cached = new LocalStorageProvider(root);
   }
   return cached;

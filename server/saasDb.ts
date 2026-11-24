@@ -1,4 +1,5 @@
 import fs from 'fs';
+import { DATA_DIR } from './config.ts';
 import path from 'path';
 import crypto from 'crypto';
 import { globalStoresEnabled, gsGet, gsSet } from './globalStores.ts';
@@ -265,7 +266,6 @@ export interface SaaSDatabaseSchema {
   systemSettings?: SystemSettings;
 }
 
-const DATA_DIR = path.resolve(process.env.SRA_DATA_DIR || path.join(process.cwd(), 'data'));
 const DB_FILE = path.join(DATA_DIR, 'saas_db.json');
 
 // Ensure directory exists
@@ -337,20 +337,9 @@ function applyDatabaseInvariants(db: SaaSDatabaseSchema): SaaSDatabaseSchema {
     }
   }
 
-  // Ensure GOD Primary Owner is permanently assigned to saidreda2810@gmail.com
-  const godUser = db.users.find(
-    (u) => u.email.toLowerCase() === GOD_OWNER_EMAIL.toLowerCase()
-  );
-  if (godUser) {
-    godUser.role = 'god';
-    godUser.isEmailVerified = true;
-    godUser.status = 'active';
-    // Backfill immutable owner anchor for pre-existing GOD accounts (one-time)
-    if (db.systemSettings && !db.systemSettings.primaryOwnerUserId) {
-      db.systemSettings.primaryOwnerUserId = godUser.id;
-      saveDatabase(db);
-    }
-  }
+  // NOTE: no role/verification mutation here — reading data must never grant
+  // privileges. Owner authority comes only from an explicitly stored role or
+  // the documented primaryOwnerUserId anchor (see isGodOwnerUser).
 
   return db;
 }
@@ -480,11 +469,11 @@ export function createUser(userData: {
   const passwordHash = hashPassword(userData.password, salt);
   const userId = `usr_${crypto.randomBytes(8).toString('hex')}`;
   const cleanEmail = userData.email.toLowerCase().trim();
-  const isGodOwner = cleanEmail === GOD_OWNER_EMAIL.toLowerCase();
 
-  const assignedRole: UserRole = isGodOwner
-    ? 'god'
-    : (userData.role === 'god' ? 'user' : (userData.role || (db.users.length === 0 ? 'platform_admin' : 'user')));
+  // Public/internal registration never grants platform privileges: the 'god'
+  // role is reserved for the documented owner anchor (bootstrap tool only),
+  // and no caller may self-assign elevated roles through this path.
+  const assignedRole: UserRole = userData.role === 'god' ? 'user' : (userData.role || 'user');
 
   const newUser: User = {
     id: userId,
@@ -493,7 +482,7 @@ export function createUser(userData: {
     salt,
     fullName: userData.fullName.trim(),
     role: assignedRole,
-    isEmailVerified: isGodOwner ? true : (userData.isEmailVerified || false),
+    isEmailVerified: userData.isEmailVerified || false,
     status: 'active',
     createdAt: new Date().toISOString(),
     lastLoginAt: new Date().toISOString(),
@@ -523,13 +512,13 @@ export function createUser(userData: {
     name: workspaceName,
     slug,
     ownerId: userId,
-    plan: isGodOwner ? 'enterprise' : 'free',
+    plan: 'free',
     billingCycle: 'monthly',
     createdAt: new Date().toISOString(),
     settings: {
       defaultTimezone: 'UTC',
       defaultSchedulingMode: 'assisted',
-      maxDailyPosts: isGodOwner ? 20 : 2,
+      maxDailyPosts: 2,
       autoOptimizeTitles: true,
       onboardingCompleted: false,
     },
@@ -545,30 +534,14 @@ export function createUser(userData: {
     joinedAt: new Date().toISOString(),
   });
 
-  // Anchor Primary Owner to immutable user ID (set once, never reassigned)
-  if (isGodOwner && !db.systemSettings?.primaryOwnerUserId) {
-    if (!db.systemSettings) {
-      db.systemSettings = {
-        maintenanceMode: false,
-        maintenanceMessage: '',
-        announcements: [],
-        featureFlags: { userRegistration: true, socialOAuth: true, aiRetentionEngine: true, scheduledPublishing: true, workspaceSharing: true },
-        security: { requireEmailVerification: false, sessionExpiryDays: 30, maxLoginAttemptsPerMinute: 10 },
-      };
-    }
-    db.systemSettings.primaryOwnerUserId = userId;
-  }
-
   // Log action
   db.auditLogs.unshift({
     id: `log_${Date.now()}_${Math.random().toString(36).substring(7)}`,
     workspaceId,
     userId,
     userEmail: newUser.email,
-    action: isGodOwner ? 'primary_god_owner_registered' : 'user_registered',
-    details: isGodOwner
-      ? `Primary GOD Owner (${newUser.email}) registered and assigned supreme platform authority.`
-      : `User ${newUser.email} registered and default workspace created.`,
+    action: 'user_registered',
+    details: `User ${newUser.email} registered and default workspace created.`,
     timestamp: new Date().toISOString(),
   });
 
@@ -582,14 +555,14 @@ export function updateUser(id: string, updates: Partial<User>): User | undefined
   if (index === -1) return undefined;
 
   const targetUser = db.users[index];
-  const isTargetGod = targetUser.email.toLowerCase() === GOD_OWNER_EMAIL.toLowerCase() || targetUser.role === 'god';
+  const isTargetGod = isGodOwnerUser(targetUser);
 
   // Primary GOD Owner Protection Guards:
   if (isTargetGod) {
     if (updates.role && updates.role !== 'god') {
       throw new Error('IMMUTABLE: The Primary GOD Owner role cannot be demoted, modified, or revoked.');
     }
-    if (updates.email && updates.email.toLowerCase() !== GOD_OWNER_EMAIL.toLowerCase()) {
+    if (updates.email && updates.email.toLowerCase() !== targetUser.email.toLowerCase()) {
       throw new Error('IMMUTABLE: The Primary GOD Owner email cannot be altered.');
     }
     if (updates.status && updates.status === 'suspended') {
@@ -597,7 +570,7 @@ export function updateUser(id: string, updates: Partial<User>): User | undefined
     }
   } else {
     if (updates.role === 'god') {
-      throw new Error('RESERVED: The GOD role is permanently reserved for the Primary Owner (saidreda2810@gmail.com).');
+      throw new Error('RESERVED: The GOD role is permanently reserved for the Primary Owner.');
     }
   }
 
@@ -611,7 +584,7 @@ export function deleteUser(id: string): { success: boolean; error?: string } {
   const target = db.users.find((u) => u.id === id);
   if (!target) return { success: false, error: 'User not found.' };
 
-  if (target.email.toLowerCase() === GOD_OWNER_EMAIL.toLowerCase() || target.role === 'god') {
+  if (isGodOwnerUser(target)) {
     return { success: false, error: 'PROTECTED: The Primary GOD Owner account cannot be deleted under any circumstances.' };
   }
 
@@ -654,6 +627,18 @@ const SYSTEM_SETTINGS_DEFAULTS: SystemSettings = {
     maxLoginAttemptsPerMinute: 30,
   },
 };
+
+/**
+ * True when the user holds explicit platform-owner authority: either the
+ * 'god' role (grantable only via the owner bootstrap path) or the immutable
+ * primaryOwnerUserId anchor. Email address alone NEVER confers this.
+ */
+export function isGodOwnerUser(user: { id?: string; role?: string } | null | undefined): boolean {
+  if (!user) return false;
+  if (user.role === 'god') return true;
+  const ownerId = getSystemSettings()?.primaryOwnerUserId;
+  return !!ownerId && user.id === ownerId;
+}
 
 export function getSystemSettings(): SystemSettings {
   if (globalStoresEnabled()) {

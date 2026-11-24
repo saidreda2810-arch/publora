@@ -15,6 +15,7 @@ import {
   addAnnouncement,
   removeAnnouncement,
   GOD_OWNER_EMAIL,
+  isGodOwnerUser,
   ROLE_HIERARCHY,
   UserRole,
   PlanTier,
@@ -22,6 +23,7 @@ import {
   hasWorkspacePermission,
   verifyPassword,
 } from './saasDb.ts';
+import { DATA_DIR, UPLOADS_DIR, MEDIA_CATALOG_FILE, BACKUP_DIR as CONFIG_BACKUP_DIR } from './config.ts';
 import {
   getAllAccounts,
   removeAccount,
@@ -945,8 +947,8 @@ saasRouter.post('/subscription/upgrade', requireGodOwner, async (req: Authentica
 
 // Helper to calculate storage on disk
 function getStorageStats() {
-  const uploadsDir = path.resolve(process.cwd(), 'data', 'uploads');
-  const dbFile = path.resolve(process.cwd(), 'data', 'saas_db.json');
+  const uploadsDir = UPLOADS_DIR;
+  const dbFile = path.join(DATA_DIR, 'saas_db.json');
   let uploadFilesCount = 0;
   let uploadSizeBytes = 0;
   let dbSizeBytes = 0;
@@ -980,7 +982,7 @@ function getStorageStats() {
 // 8. ADMIN & GOD OVERVIEW
 saasRouter.get('/admin/overview', requireRole(['god', 'super_admin', 'platform_admin', 'admin']), async (req: AuthenticatedRequest, res: Response) => {
   const caller = req.user!;
-  const isGod = caller.role === 'god' && caller.email.toLowerCase() === GOD_OWNER_EMAIL.toLowerCase();
+  const isGod = caller.role === 'god' && isGodOwnerUser(caller);
 
   const users = await authStore.listUsers();
   const workspaces = await authStore.listWorkspaces();
@@ -1051,7 +1053,7 @@ saasRouter.get('/admin/users', requireRole(['god', 'super_admin', 'platform_admi
   const safeUsers = await Promise.all(users.map(async (u: any) => {
     const sanitized = sanitizeUserForClient(u);
     const workspaces = await authStore.getUserWorkspaces(u.id);
-    const isGod = u.email.toLowerCase() === GOD_OWNER_EMAIL.toLowerCase() || u.role === 'god';
+    const isGod = isGodOwnerUser(u);
 
     return {
       ...sanitized,
@@ -1082,7 +1084,7 @@ saasRouter.put('/admin/users/:id/status', requireGodOwner, async (req: Authentic
   }
 
   // Prevent modifying the GOD Primary Owner
-  if (targetUser.email.toLowerCase() === GOD_OWNER_EMAIL.toLowerCase() || targetUser.role === 'god') {
+  if (isGodOwnerUser(targetUser)) {
     return res.status(403).json({
       success: false,
       error: 'CRITICAL ACCESS VIOLATION: The Primary GOD Owner account cannot be suspended or restricted under any circumstances.',
@@ -1133,7 +1135,7 @@ saasRouter.put('/admin/users/:id/role', requireGodOwner, async (req: Authenticat
   }
 
   // 1. Target cannot be GOD Primary Owner
-  if (targetUser.email.toLowerCase() === GOD_OWNER_EMAIL.toLowerCase() || targetUser.role === 'god') {
+  if (isGodOwnerUser(targetUser)) {
     return res.status(403).json({
       success: false,
       error: 'CRITICAL ACCESS VIOLATION: The Primary GOD Owner role cannot be demoted, modified, or revoked.',
@@ -1216,7 +1218,7 @@ saasRouter.delete('/admin/users/:id', requireGodOwner, async (req: Authenticated
   }
 
   // Protect Primary GOD Owner
-  if (targetUser.email.toLowerCase() === GOD_OWNER_EMAIL.toLowerCase() || targetUser.role === 'god') {
+  if (isGodOwnerUser(targetUser)) {
     return res.status(403).json({
       success: false,
       error: 'CRITICAL ACCESS VIOLATION: The Primary GOD Owner account cannot be deleted.',
@@ -1421,7 +1423,7 @@ saasRouter.put('/admin/upload-policy', requireRole(['god', 'super_admin', 'platf
 });
 
 saasRouter.get('/admin/storage-details', requireRole(['god', 'super_admin', 'platform_admin', 'admin']), async (req: AuthenticatedRequest, res: Response) => {
-  const catalogPath = path.resolve(process.cwd(), 'data', 'media_catalog.json');
+  const catalogPath = MEDIA_CATALOG_FILE;
   let catalog: any[] = [];
   try { catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf-8')); } catch {}
 
@@ -1603,7 +1605,7 @@ saasRouter.delete('/account', async (req: AuthenticatedRequest, res: Response) =
     return res.status(401).json({ success: false, error: 'Incorrect password. Account was not deleted.' });
   }
 
-  if (user.email.toLowerCase() === GOD_OWNER_EMAIL.toLowerCase() || user.role === 'god') {
+  if (isGodOwnerUser(user)) {
     return res.status(403).json({
       success: false,
       error: 'CRITICAL ACCESS VIOLATION: The Primary GOD Owner account cannot be deleted.',
@@ -2083,7 +2085,7 @@ saasRouter.get('/admin/security/overview', requireGodOwner, async (req: Authenti
 // ---- Infrastructure monitoring (GOD-only): real storage + DB + honest backup status ----
 saasRouter.get('/admin/infrastructure', requireGodOwner, async (req: AuthenticatedRequest, res: Response) => {
   const storage = getStorageStats();
-  const dataDir = path.resolve(process.cwd(), 'data');
+  const dataDir = DATA_DIR;
   const dbFile = path.join(dataDir, 'saas_db.json');
 
   // Data directory inventory (names + sizes only, no content)
@@ -2253,7 +2255,7 @@ saasRouter.get('/admin/privacy-shield', requireGodOwner, async (req: Authenticat
 // Deactivate account — suspends access, preserves data, reversible by admin
 saasRouter.post('/account/deactivate', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const user = req.user!;
-  if (user.email.toLowerCase() === GOD_OWNER_EMAIL.toLowerCase()) {
+  if (isGodOwnerUser(user)) {
     return res.status(403).json({ success: false, error: 'The Primary Owner account cannot be deactivated.' });
   }
   const { password, reason } = req.body || {};
@@ -2276,7 +2278,7 @@ saasRouter.post('/account/deactivate', requireAuth, async (req: AuthenticatedReq
 // Delete account — checks workspace ownership before allowing
 saasRouter.post('/account/delete-request', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const user = req.user!;
-  if (user.email.toLowerCase() === GOD_OWNER_EMAIL.toLowerCase()) {
+  if (isGodOwnerUser(user)) {
     return res.status(403).json({ success: false, error: 'The Primary Owner account cannot be deleted.' });
   }
   const { password, confirmText } = req.body || {};
@@ -2402,7 +2404,7 @@ saasRouter.get('/admin/background-ops', requireGodOwner, async (req: Authenticat
   }
   // Drive import jobs
   let importJobs: any[] = [];
-  try { importJobs = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'data', 'drive_imports.json'), 'utf8')); } catch {}
+  try { importJobs = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'drive_imports.json'), 'utf8')); } catch {}
   const importStates: Record<string, number> = {};
   importJobs.forEach((j: any) => { importStates[j.status] = (importStates[j.status] || 0) + 1; });
 
@@ -2419,7 +2421,7 @@ saasRouter.get('/admin/background-ops', requireGodOwner, async (req: Authenticat
 });
 
 // ---- Backup management (GOD-only): real file-copy backups of saas_db.json ----
-const BACKUP_DIR = path.join(process.cwd(), 'data', 'backups');
+const BACKUP_DIR = CONFIG_BACKUP_DIR;
 const BACKUP_INDEX = path.join(BACKUP_DIR, 'index.json');
 
 function ensureBackupDir() { if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true }); }
@@ -2431,7 +2433,7 @@ saasRouter.get('/admin/backups', requireGodOwner, async (req: AuthenticatedReque
 });
 
 saasRouter.post('/admin/backups', requireGodOwner, async (req: AuthenticatedRequest, res: Response) => {
-  const dbFile = path.join(process.cwd(), 'data', 'saas_db.json');
+  const dbFile = path.join(DATA_DIR, 'saas_db.json');
   if (!fs.existsSync(dbFile)) return res.status(500).json({ success: false, error: 'Database file not found' });
   ensureBackupDir();
   const id = `bak_${Date.now().toString(36)}`;
@@ -2469,7 +2471,7 @@ saasRouter.post('/admin/backups/:id/verify', requireGodOwner, async (req: Authen
 });
 
 // ---- Maintenance tasks (GOD-only): predefined safe operations ----
-const TASKS_FILE = path.join(process.cwd(), 'data', 'maintenance_tasks.json');
+const TASKS_FILE = path.join(DATA_DIR, 'maintenance_tasks.json');
 function loadTasks(): any[] { try { return JSON.parse(fs.readFileSync(TASKS_FILE, 'utf8')); } catch { return []; } }
 function saveTasks(t: any[]) { fs.writeFileSync(TASKS_FILE, JSON.stringify(t.slice(-200), null, 2)); }
 
@@ -2487,7 +2489,7 @@ const TASK_DEFS: Record<string, { title: string; desc: string; run: () => Promis
         const r = await query(`SELECT (SELECT count(*) FROM users)::int AS users, (SELECT count(*) FROM workspaces)::int AS workspaces`);
         return { ok: true, driver: 'pg', users: r.rows[0].users, workspaces: r.rows[0].workspaces };
       }
-      const raw = fs.readFileSync(path.join(process.cwd(), 'data', 'saas_db.json'), 'utf8');
+      const raw = fs.readFileSync(path.join(DATA_DIR, 'saas_db.json'), 'utf8');
       const db = JSON.parse(raw);
       return { ok: true, driver: 'json', users: db.users?.length || 0, workspaces: db.workspaces?.length || 0, sizeBytes: Buffer.byteLength(raw) };
     },

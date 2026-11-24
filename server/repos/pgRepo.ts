@@ -52,8 +52,14 @@ export function createPgRepos(): SaasRepos {
       create: async (userId, meta) => {
         const token = crypto.randomBytes(32).toString('base64url');
         const hash = hashToken(token);
-        await query(`INSERT INTO sessions(user_id,token_hash,ip,user_agent,expires_at,created_at)
-          SELECT id,$2,$3,$4,now()+interval '30 days',now() FROM users WHERE ${byLegacy('id::text','legacy_id')}`, [userId, hash, meta?.ip ?? null, meta?.userAgent ?? null]);
+        // Resolve the user UUID explicitly — INSERT...SELECT with a mismatched
+        // parameter order previously inserted zero rows yet returned success.
+        const u = (await query(`SELECT id FROM users WHERE legacy_id=$1 OR id::text=$1`, [userId])).rows[0];
+        if (!u) throw new Error(`sessions.create: user not found (${userId})`);
+        const ip = meta?.ip && /^[0-9a-fA-F.:]+$/.test(meta.ip) ? meta.ip : null;
+        const r = await query(`INSERT INTO sessions(user_id,token_hash,ip,user_agent,expires_at,created_at)
+          VALUES($1,$2,$3::inet,$4,now()+interval '30 days',now()) RETURNING id`, [u.id, hash, ip, meta?.userAgent ?? null]);
+        if (r.rowCount !== 1) throw new Error('sessions.create: insert returned no row');
         return { token, userId } as any;
       },
       findByToken: async (token) => {

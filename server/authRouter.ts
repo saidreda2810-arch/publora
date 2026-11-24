@@ -10,7 +10,7 @@ import {
   UserRole,
   Workspace,
   UserSession,
-  GOD_OWNER_EMAIL,
+  isGodOwnerUser,
   hasRoleLevel,
   UserPreferences,
 } from './saasDb.ts';
@@ -145,12 +145,11 @@ export async function requireGodOwner(req: AuthenticatedRequest, res: Response, 
       return res.status(401).json({ success: false, error: 'Authentication required.' });
     }
 
-    // Primary Owner anchored to immutable user ID; email+role is fallback for pre-migration sessions
+    // Owner authority = 'god' role AND (when an owner anchor exists) the
+    // anchored user ID. Email address alone never grants access.
     const settings = getSystemSettings();
     const ownerId = settings?.primaryOwnerUserId;
-    const isGod = req.user.role === 'god' && (
-      (ownerId ? req.user.id === ownerId : req.user.email.toLowerCase() === GOD_OWNER_EMAIL.toLowerCase())
-    );
+    const isGod = req.user.role === 'god' && (!ownerId || req.user.id === ownerId);
     if (!isGod) {
       try {
         await authStore.logAudit({
@@ -688,7 +687,7 @@ authRouter.put('/profile', requireAuth, async (req: AuthenticatedRequest, res: R
       return res.status(400).json({ success: false, error: 'Please enter a valid email address.' });
     }
     if (cleanEmail !== user.email.toLowerCase()) {
-      if (user.email.toLowerCase() === GOD_OWNER_EMAIL.toLowerCase()) {
+      if (isGodOwnerUser(user)) {
         return res.status(403).json({ success: false, error: 'The Primary Owner email cannot be changed.' });
       }
       const existing = await authStore.findUserByEmail(cleanEmail);

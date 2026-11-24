@@ -16,17 +16,19 @@
     "db:new": "tsx scripts/db-migrate.ts new"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1170.0",
+    "@aws-sdk/s3-request-presigner": "^3.1170.0",
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "^6.1.1",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "ffmpeg-static": "^5.3.0",
-    "firebase": "^13.2.0",
-    "jspdf": "^2.5.2",
+    "firebase": "^13.4.0",
+    "jspdf": "^4.2.1",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
-    "nodemailer": "^6.9.16",
+    "nodemailer": "^10.6.0",
     "pg": "^8.23.1",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
@@ -45,5 +47,8 @@
     "esbuild": "^0.28.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "^1.14.7"
   }
 }
