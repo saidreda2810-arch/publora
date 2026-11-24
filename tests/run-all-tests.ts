@@ -3,6 +3,7 @@
  * Executes Unit Tests, Integration Tests, Security Audits, and Multi-Tenant Isolation Tests
  */
 
+import './test-env.ts';
 import {
   hashPassword,
   generateSalt,
@@ -24,6 +25,8 @@ import {
   sanitizeUserForClient,
   getSystemSettings,
   updateSystemSettings,
+  getDb,
+  saveDatabase,
   addAnnouncement,
   removeAnnouncement,
   GOD_OWNER_EMAIL,
@@ -52,10 +55,6 @@ import {
 
 import fs from 'fs';
 import path from 'path';
-
-// Test-only secrets — production code has no built-in fallback key anymore.
-process.env.NODE_ENV = process.env.NODE_ENV || 'test';
-process.env.OAUTH_ENCRYPTION_KEY = process.env.OAUTH_ENCRYPTION_KEY || 'test-only-oauth-encryption-key-0123456789';
 
 interface TestResult {
   suite: string;
@@ -92,6 +91,27 @@ async function main() {
   console.log('\n======================================================');
   console.log('   SRA SOCIAL PUBLISHER - PRODUCTION TEST RUNNER');
   console.log('======================================================\n');
+
+  // Bootstrap the anchored Primary Owner inside the isolated test store.
+  // Registration no longer grants god — mirror scripts/bootstrap-owner.ts.
+  {
+    let god = findUserByEmail(GOD_OWNER_EMAIL);
+    if (!god) {
+      god = createUser({
+        email: GOD_OWNER_EMAIL,
+        password: 'TestOnlyOwnerPassword!1',
+        fullName: 'Primary Owner',
+        isEmailVerified: true,
+      }).user;
+    }
+    const d = getDb();
+    const u = (d.users || []).find((x: any) => x.id === god!.id);
+    if (u && u.role !== 'god') { u.role = 'god'; saveDatabase(d); }
+    const settings = getSystemSettings() as any;
+    if (!settings?.primaryOwnerUserId) {
+      updateSystemSettings({ primaryOwnerUserId: god!.id } as any);
+    }
+  }
 
   // =========================================================================
   // SUITE 1: CRYPTOGRAPHIC INTEGRITY & PASSWORD SECURITY

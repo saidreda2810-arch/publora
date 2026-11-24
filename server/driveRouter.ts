@@ -28,7 +28,7 @@ interface DriveConnection {
   lastSyncAt?: string;
 }
 
-import { DATA_DIR } from './config.ts';
+import { DATA_DIR, UPLOADS_DIR } from './config.ts';
 const CONN_FILE = path.join(DATA_DIR, 'drive_connections.json');
 
 function loadConns(): DriveConnection[] {
@@ -331,7 +331,6 @@ async function wsSaveBlob(wsId: string, data: any): Promise<void> {
 }
 
 const IMPORTS_FILE = path.join(DATA_DIR, 'drive_imports.json');
-const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 interface ImportJob {
