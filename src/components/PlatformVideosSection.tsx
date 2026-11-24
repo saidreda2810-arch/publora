@@ -173,7 +173,7 @@ export const PlatformVideosSection: React.FC<Props> = ({
       {items.length === 0 ? (
         <p className="text-[11px] text-[var(--text-muted)] py-2">{emptyText || 'No platform content found.'}</p>
       ) : (
-        <div className="space-y-2 max-h-80 overflow-y-auto">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 max-h-[36rem] overflow-y-auto pr-1">
           {items.map((v) => {
             const meta = PLATFORM_META[v.platform] || { label: v.platform, color: 'text-[var(--text-secondary)]' };
             const when = v.status === 'scheduled' ? v.scheduledAt : v.publishedAt;
@@ -183,36 +183,33 @@ export const PlatformVideosSection: React.FC<Props> = ({
                 href={v.url || '#'}
                 target="_blank"
                 rel="noreferrer"
-                className="flex gap-2.5 rounded-lg border border-[var(--border-color)] bg-[var(--bg-main)]/60 p-2 hover:border-[#00D6B2]/40 transition group"
+                className="group rounded-lg border border-[var(--border-color)] bg-[var(--bg-main)]/60 overflow-hidden hover:border-[#00D6B2]/50 transition flex flex-col"
               >
-                <div className="relative w-20 h-12 rounded-md overflow-hidden bg-[var(--bg-surface-hover)] shrink-0">
+                <div className="relative aspect-video bg-[var(--bg-surface-hover)]">
                   {v.thumbnailUrl ? (
-                    <img src={v.thumbnailUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
+                    <img src={v.thumbnailUrl} alt="" className="w-full h-full object-cover group-hover:scale-105 transition duration-300" loading="lazy" />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center"><Video size={16} className="text-[var(--text-muted)]" /></div>
+                    <div className="w-full h-full flex items-center justify-center"><Video size={22} className="text-[var(--text-muted)]" /></div>
                   )}
+                  <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-black/60 to-transparent" />
                   {v.durationSec != null && (
-                    <span className="absolute bottom-0.5 right-0.5 text-[9px] font-mono bg-black/70 text-white px-1 rounded">{fmtDur(v.durationSec)}</span>
+                    <span className="absolute bottom-1 right-1 text-[9px] font-mono bg-black/70 text-white px-1 rounded">{fmtDur(v.durationSec)}</span>
                   )}
+                  <span className={`absolute top-1 left-1 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-black/60 ${meta.color}`}>{meta.label}</span>
+                  <span className={`absolute top-1 right-1 text-[8px] font-mono px-1 py-0.5 rounded border ${
+                    v.status === 'scheduled' ? 'text-amber-300 border-amber-500/40 bg-amber-500/10'
+                    : v.status === 'published' ? 'text-emerald-300 border-emerald-500/40 bg-emerald-500/10'
+                    : 'text-[var(--text-muted)] border-[var(--border-color)] bg-black/40'
+                  }`}>{v.status}</span>
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <span className={`text-[10px] font-bold uppercase ${meta.color}`}>{meta.label}</span>
-                    <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${
-                      v.status === 'scheduled' ? 'text-amber-300 border-amber-500/40 bg-amber-500/10'
-                      : v.status === 'published' ? 'text-emerald-300 border-emerald-500/40 bg-emerald-500/10'
-                      : 'text-[var(--text-muted)] border-[var(--border-color)]'
-                    }`}>{v.status}</span>
-                  </div>
-                  <p className="text-xs font-medium text-[var(--text-primary)] truncate group-hover:text-[#00D6B2] transition">{v.title}</p>
-                  <div className="flex items-center gap-3 mt-0.5 text-[10px] text-[var(--text-muted)]">
-                    <span className="flex items-center gap-1"><Clock size={10} />{fmtDate(when)}</span>
-                    {v.views != null && <span className="flex items-center gap-1"><Eye size={10} />{fmtNum(v.views)}</span>}
-                    {v.likes != null && <span className="flex items-center gap-1"><Heart size={10} />{fmtNum(v.likes)}</span>}
-                    {v.comments != null && <span className="flex items-center gap-1"><MessageCircle size={10} />{fmtNum(v.comments)}</span>}
+                <div className="p-2 flex flex-col gap-1 min-w-0 flex-1">
+                  <p className="text-[11px] font-medium text-[var(--text-primary)] leading-snug line-clamp-2 group-hover:text-[#00D6B2] transition min-h-[2rem]">{v.title}</p>
+                  <div className="flex items-center gap-2 mt-auto text-[9px] text-[var(--text-muted)]">
+                    <span className="flex items-center gap-0.5"><Clock size={9} />{fmtDate(when)}</span>
+                    {v.views != null && <span className="flex items-center gap-0.5"><Eye size={9} />{fmtNum(v.views)}</span>}
+                    {v.likes != null && <span className="flex items-center gap-0.5"><Heart size={9} />{fmtNum(v.likes)}</span>}
                   </div>
                 </div>
-                <ExternalLink size={12} className="text-[var(--text-muted)] group-hover:text-[#00D6B2] shrink-0 self-center" />
               </a>
             );
           })}
