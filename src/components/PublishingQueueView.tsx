@@ -452,8 +452,8 @@ export const PublishingQueueView: React.FC<{ onOpenNewPost: () => void }> = ({ o
         <TimelineView posts={filtered} videos={videos} brands={brands} onOpen={setDetailId} />
       )}
 
-      {/* Videos scheduled directly on connected platforms (read-only mirror) */}
-      <PlatformVideosSection mode="scheduled" title="Scheduled on your platforms" />
+      {/* Content that exists on connected platforms — scheduled + published (read-only mirror) */}
+      <PlatformVideosSection mode="all" title="On your platforms" />
 
       {/* Reschedule dialog */}
       {reschedFor && (

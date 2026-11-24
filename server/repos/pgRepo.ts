@@ -144,11 +144,26 @@ export function createPgRepos(): SaasRepos {
           }
         }
         if ((data as any).accounts !== undefined) {
+          // post_targets.social_account_id is NO ACTION — preserve target→account
+          // links across the delete/reinsert cycle (accounts get fresh UUIDs).
+          const targetLinks = (await c.query(
+            `SELECT pt.id AS target_id, sa.legacy_id AS account_legacy, sa.id::text AS account_uuid
+             FROM post_targets pt JOIN social_accounts sa ON sa.id = pt.social_account_id
+             WHERE pt.workspace_id=$1 AND sa.workspace_id=$1`, [ws.id])).rows;
+          if (targetLinks.length) {
+            await c.query('UPDATE post_targets SET social_account_id=NULL WHERE workspace_id=$1', [ws.id]);
+          }
           await c.query('DELETE FROM social_accounts WHERE workspace_id=$1', [ws.id]);
           for (const a of (data as any).accounts || []) {
             await c.query(`INSERT INTO social_accounts(legacy_id,workspace_id,brand_id,provider,platform_account_id,account_name,handle,avatar_url,status,metadata,created_at,updated_at)
               VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now(),now()) ON CONFLICT DO NOTHING`,
               [a.id || a.legacyId, ws.id, await resolveFk('brands', a.brandId), toProvider(a.provider || a.platform), a.externalAccountId || a.id || null, a.accountName || a.name || '', a.usernameOrHandle || a.handle || null, a.avatarUrl || null, a.connectionStatus || a.status || 'disconnected', JSON.stringify(a)]);
+          }
+          for (const l of targetLinks) {
+            const nr = await c.query(
+              `SELECT id FROM social_accounts WHERE workspace_id=$1 AND (legacy_id=$2 OR id::text=$2) LIMIT 1`,
+              [ws.id, l.account_legacy ?? l.account_uuid]);
+            if (nr.rows[0]) await c.query('UPDATE post_targets SET social_account_id=$1 WHERE id=$2', [nr.rows[0].id, l.target_id]);
           }
         }
         if ((data as any).videos !== undefined) {

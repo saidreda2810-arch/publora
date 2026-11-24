@@ -118,8 +118,8 @@ export const PublishingCalendarView: React.FC<{ onOpenNewPost: () => void; onSch
     return m;
   }, [filteredPosts, tz]);
 
-  // Platform-scheduled videos (live provider data) grouped by day for grid chips
-  const { items: platformItems } = usePlatformVideos('scheduled');
+  // Platform content (scheduled uploads + published posts) grouped by day for grid chips
+  const { items: platformItems } = usePlatformVideos('all');
   const platformByDay = useMemo(() => {
     const m = new Map<string, any[]>();
     for (const it of platformItems) {

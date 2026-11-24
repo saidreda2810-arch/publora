@@ -235,11 +235,23 @@ export async function listPlatformVideos(
   account: SocialAccountRecord,
   opts: { status?: 'all' | 'scheduled' | 'published'; max?: number } = {},
 ): Promise<PlatformContentResult> {
+  const callProvider = async (): Promise<PlatformContentResult> => {
+    if (account.provider === 'youtube') return listYouTube(account, opts.max);
+    if (account.provider === 'tiktok') return listTikTok(account);
+    return listMeta(account);
+  };
+
   try {
+    // One retry for transient network failures ('fetch failed' / ECONNRESET).
     let result: PlatformContentResult;
-    if (account.provider === 'youtube') result = await listYouTube(account, opts.max);
-    else if (account.provider === 'tiktok') result = await listTikTok(account);
-    else result = await listMeta(account);
+    try {
+      result = await callProvider();
+    } catch (first) {
+      const transient = /fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket/i.test(String((first as any)?.cause?.code || (first as any)?.message || first));
+      if (!transient) throw first;
+      await new Promise((r) => setTimeout(r, 800));
+      result = await callProvider();
+    }
 
     // Persist the full fetched set (pre-filter) so stored rows cover all statuses.
     if (result.ok && result.items.length) {
@@ -250,7 +262,8 @@ export async function listPlatformVideos(
     }
     return result;
   } catch (e: any) {
-    const msg = String(e?.message || e);
+    const cause = e?.cause?.code || e?.cause?.message;
+    const msg = cause ? `${e?.message || e} (${cause})` : String(e?.message || e);
     if (/401|unauthorized|token|reconnect/i.test(msg)) {
       return { ok: false, items: [], error: msg };
     }
