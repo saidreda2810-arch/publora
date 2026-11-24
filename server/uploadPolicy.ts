@@ -140,6 +140,32 @@ export function workspaceVideoCount(workspaceId: string): number | null {
   }
 }
 
+/**
+ * Bytes declared by in-flight chunked upload sessions for a workspace.
+ * These count toward the quota so concurrent uploads cannot collectively
+ * exceed it before their assets are cataloged. `excludeSessionId` lets the
+ * completing session exclude itself (its bytes become the asset instead).
+ */
+export async function pendingUploadBytes(workspaceId: string, excludeSessionId?: string): Promise<number> {
+  try {
+    if (usePgSessions()) {
+      const r = await query(
+        `SELECT COALESCE(SUM(s.size_bytes),0) AS total
+         FROM upload_sessions s JOIN workspaces w ON w.id = s.workspace_id
+         WHERE w.legacy_id = $1 AND s.status = 'active' ${excludeSessionId ? 'AND s.id <> $2' : ''}`,
+        excludeSessionId ? [workspaceId, excludeSessionId] : [workspaceId]
+      );
+      return Number(r.rows[0]?.total || 0);
+    }
+    const sessions = await listActiveSessions();
+    return sessions
+      .filter((s) => s.workspaceId === workspaceId && s.id !== excludeSessionId)
+      .reduce((t, s) => t + (s.sizeBytes || 0), 0);
+  } catch {
+    return 0;
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Chunked resumable upload sessions                                   */
 /* ------------------------------------------------------------------ */

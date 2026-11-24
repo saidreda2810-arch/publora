@@ -13,7 +13,7 @@ import { DATA_DIR } from './config.ts';
 import path from 'path';
 import crypto from 'crypto';
 import { getStorageProvider } from './storage/storageProvider.ts';
-import { globalStoresEnabled, gsGet, gsSet } from './globalStores.ts';
+import { globalStoresEnabled, gsGet, gsSet, gsTransact } from './globalStores.ts';
 
 const ASSETS_FILE = path.join(DATA_DIR, 'media_assets.json');
 const LEGACY_CATALOG = path.join(DATA_DIR, 'media_catalog.json');
@@ -117,10 +117,38 @@ export interface CreateAssetInput {
   width?: number | null; height?: number | null; durationMs?: number | null;
 }
 
-export function createAsset(input: CreateAssetInput): MediaAssetRecord {
-  const rows = load();
-  const rec: MediaAssetRecord = {
-    id: `med_${crypto.randomUUID()}`,
+export interface CreateAssetOptions {
+  /** Workspace quota ceiling in bytes; enforced atomically with the insert. */
+  quotaBytes?: number | null;
+  /** Bytes reserved by in-flight uploads (chunked sessions) — counted toward quota. */
+  reservedBytes?: number;
+}
+
+/** Thrown when the atomic quota check rejects an insert. */
+export class MediaQuotaExceededError extends Error {
+  code = 'QUOTA_EXCEEDED';
+  usedBytes: number;
+  quotaBytes: number;
+  constructor(used: number, quota: number) {
+    super(`Workspace storage quota exceeded. Used ${used} of ${quota} bytes.`);
+    this.usedBytes = used;
+    this.quotaBytes = quota;
+  }
+}
+
+function quotaGuard(rows: MediaAssetRecord[], input: CreateAssetInput, opts?: CreateAssetOptions) {
+  const quota = opts?.quotaBytes ?? 0;
+  if (!quota || quota <= 0) return;
+  const used = rows
+    .filter((a) => a.workspaceId === input.workspaceId && a.status === 'active')
+    .reduce((s, a) => s + (a.sizeBytes || 0), 0);
+  const reserved = opts?.reservedBytes ?? 0;
+  if (used + reserved + input.sizeBytes > quota) throw new MediaQuotaExceededError(used + reserved, quota);
+}
+
+export async function createAsset(input: CreateAssetInput, opts?: CreateAssetOptions): Promise<MediaAssetRecord> {
+  const make = (id?: string): MediaAssetRecord => ({
+    id: id || `med_${crypto.randomUUID()}`,
     workspaceId: input.workspaceId,
     userId: input.userId,
     storageKey: input.storageKey,
@@ -136,20 +164,60 @@ export function createAsset(input: CreateAssetInput): MediaAssetRecord {
     createdBy: input.userId,
     createdAt: new Date().toISOString(),
     deletedAt: null,
-  };
+  });
+
+  if (globalStoresEnabled()) {
+    // Atomic read-modify-write: dedupe + quota + insert happen under the
+    // same row lock, so concurrent uploads cannot lose rows or race past
+    // the workspace quota.
+    let result: MediaAssetRecord | undefined;
+    await gsTransact<MediaAssetRecord[]>('media_assets', (rows) => {
+      const list = Array.isArray(rows) ? rows : [];
+      const dup = input.sha256
+        ? list.find((a) => a.workspaceId === input.workspaceId && a.sha256 === input.sha256 && a.status === 'active')
+        : undefined;
+      if (dup) { result = dup; return list; }
+      quotaGuard(list, input, opts);
+      result = make();
+      return [result, ...list];
+    });
+    return result!;
+  }
+
+  const rows = load();
+  const dup = input.sha256
+    ? rows.find((a) => a.workspaceId === input.workspaceId && a.sha256 === input.sha256 && a.status === 'active')
+    : undefined;
+  if (dup) return dup;
+  quotaGuard(rows, input, opts);
+  const rec = make();
   rows.unshift(rec);
   save(rows);
   return rec;
 }
 
 /** Soft delete; hard delete left to the lifecycle job (WP8). */
-export function softDeleteAsset(id: string): MediaAssetRecord | null {
+export async function softDeleteAsset(id: string): Promise<MediaAssetRecord | null> {
+  const apply = (rows: MediaAssetRecord[]): { rows: MediaAssetRecord[]; rec: MediaAssetRecord | null } => {
+    const rec = rows.find((a) => a.id === id);
+    if (!rec || rec.status === 'deleted') return { rows, rec: null };
+    rec.status = 'deleted';
+    rec.deletedAt = new Date().toISOString();
+    return { rows, rec };
+  };
+  if (globalStoresEnabled()) {
+    let result: MediaAssetRecord | null = null;
+    await gsTransact<MediaAssetRecord[]>('media_assets', (rows) => {
+      const list = Array.isArray(rows) ? rows : [];
+      const { rows: next, rec } = apply(list);
+      result = rec;
+      return next;
+    });
+    return result;
+  }
   const rows = load();
-  const rec = rows.find((a) => a.id === id);
-  if (!rec || rec.status === 'deleted') return null;
-  rec.status = 'deleted';
-  rec.deletedAt = new Date().toISOString();
-  save(rows);
+  const { rec } = apply(rows);
+  if (rec) save(rows);
   return rec;
 }
 

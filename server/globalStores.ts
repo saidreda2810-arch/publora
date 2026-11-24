@@ -1,4 +1,4 @@
-import { query } from './db/client.ts';
+import { query, withTransaction } from './db/client.ts';
 
 /**
  * globalStores — PG-backed replacement for the remaining JSON file stores
@@ -53,6 +53,39 @@ export function gsSet(name: string, value: any): void {
     .catch((e) => console.error(`[globalStores] persist '${name}' failed:`, e?.message || e));
   pendingWrites.set(k, next);
   void next.finally(() => { if (pendingWrites.get(k) === next) pendingWrites.delete(k); });
+}
+
+/**
+ * Atomic read-modify-write for a gs:* blob. In pg mode the row is locked
+ * with SELECT ... FOR UPDATE inside a transaction, so concurrent writers
+ * serialize instead of last-writer-wins. Use for stores whose contents are
+ * mutated incrementally (e.g. media_assets) where gsSet's whole-blob
+ * write-through could drop records.
+ */
+export async function gsTransact<T>(name: string, fn: (current: T | undefined) => T): Promise<T> {
+  const k = key(name);
+  if (!globalStoresEnabled()) {
+    const cur = cache.has(k) ? (cache.get(k) as T) : undefined;
+    const next = fn(cur);
+    cache.set(k, next);
+    return next;
+  }
+  const next = await withTransaction(async (c) => {
+    // Ensure the row exists so FOR UPDATE has something to lock.
+    await c.query(
+      `INSERT INTO system_settings(key, value, updated_at) VALUES($1, 'null'::jsonb, now()) ON CONFLICT (key) DO NOTHING`,
+      [k]
+    );
+    const r = await c.query<{ value: T }>(`SELECT value FROM system_settings WHERE key=$1 FOR UPDATE`, [k]);
+    const out = fn(r.rows[0]?.value);
+    await c.query(
+      `UPDATE system_settings SET value=$2::jsonb, updated_at=now() WHERE key=$1`,
+      [k, JSON.stringify(out ?? null)]
+    );
+    return out;
+  });
+  cache.set(k, next);
+  return next;
 }
 
 /** Hydrate all gs:* keys from PG into cache (skips keys with pending writes). */

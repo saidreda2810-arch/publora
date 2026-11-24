@@ -13,7 +13,7 @@ import {
   usageBytes as assetsUsageBytes, videoCount as assetsVideoCount,
 } from './mediaAssets.ts';
 import {
-  getUploadPolicy, planLimitBytes, workspaceUsageBytes, workspaceVideoCount,
+  getUploadPolicy, planLimitBytes, workspaceUsageBytes, workspaceVideoCount, pendingUploadBytes,
   createSession, getSession, saveSession, deleteSession, listActiveSessions,
   sweepExpiredSessions, activeSessionCount, sniffVideoType, storeChunk, readChunk,
   UploadSession,
@@ -78,6 +78,8 @@ const fmtBytes = (b: number) =>
 async function persistAsset(input: {
   workspaceId: string; userId: string; buffer: Buffer;
   originalName: string; mimeType: string;
+  quotaBytes?: number | null;
+  reservedBytes?: number;
 }): Promise<any> {
   const sha256 = crypto.createHash('sha256').update(input.buffer).digest('hex');
   const existing = findBySha256(input.workspaceId, sha256);
@@ -89,10 +91,10 @@ async function persistAsset(input: {
   if (!(await store.head(storageKey))) {
     await store.put(storageKey, input.buffer, input.mimeType);
   }
-  const rec = createAsset({
+  const rec = await createAsset({
     workspaceId: input.workspaceId, userId: input.userId, storageKey, sha256,
     mimeType: input.mimeType, sizeBytes: input.buffer.length, originalName: input.originalName,
-  });
+  }, { quotaBytes: input.quotaBytes, reservedBytes: input.reservedBytes });
   return { ...rec, url: assetPublicUrl(rec), deduplicated: false };
 }
 
@@ -280,6 +282,8 @@ mediaRouter.post('/upload', async (req: AuthenticatedRequest, res: Response) => 
     const asset = await persistAsset({
       workspaceId, userId: user.id, buffer: fileBuffer,
       originalName: sanitizedOriginalName, mimeType,
+      quotaBytes: policy.workspaceQuotaBytes || null,
+      reservedBytes: await pendingUploadBytes(workspaceId),
     });
 
     await authStore.logAudit({
@@ -296,6 +300,9 @@ mediaRouter.post('/upload', async (req: AuthenticatedRequest, res: Response) => 
       message: 'File successfully processed and stored',
     });
   } catch (err: any) {
+    if (err?.code === 'QUOTA_EXCEEDED') {
+      return res.status(413).json({ success: false, error: err.message, quotaBytes: err.quotaBytes, usedBytes: err.usedBytes });
+    }
     console.error('Failed to write media asset to disk:', err);
     res.status(500).json({ success: false, error: 'Failed to persist media asset to storage' });
   }
@@ -340,8 +347,9 @@ mediaRouter.post('/chunked/init', async (req: AuthenticatedRequest, res: Respons
     if (used === null) {
       return res.status(503).json({ success: false, error: 'Storage usage statistics are unavailable — upload rejected. Retry shortly.' });
     }
-    if (used + sizeBytes > policy.workspaceQuotaBytes) {
-      return res.status(413).json({ success: false, error: `Workspace storage quota exceeded (${fmtBytes(used)} of ${fmtBytes(policy.workspaceQuotaBytes)} used).` });
+    const reserved = await pendingUploadBytes(workspaceId);
+    if (used + reserved + sizeBytes > policy.workspaceQuotaBytes) {
+      return res.status(413).json({ success: false, error: `Workspace storage quota exceeded (${fmtBytes(used + reserved)} of ${fmtBytes(policy.workspaceQuotaBytes)} used or reserved).` });
     }
   }
 
@@ -426,6 +434,8 @@ mediaRouter.post('/chunked/:sid/complete', async (req: AuthenticatedRequest, res
   persistAsset({
     workspaceId: s.workspaceId, userId: s.userId, buffer: assembled,
     originalName: s.filename, mimeType: s.mimeType,
+    quotaBytes: getUploadPolicy().workspaceQuotaBytes || null,
+    reservedBytes: await pendingUploadBytes(s.workspaceId, s.id),
   }).then(async (asset) => {
     await deleteSession(s.id);
     await authStore.logAudit({
@@ -434,7 +444,12 @@ mediaRouter.post('/chunked/:sid/complete', async (req: AuthenticatedRequest, res
       details: `Chunked upload "${s.filename}" (${fmtBytes(s.sizeBytes)})`,
     });
     res.status(201).json({ success: true, asset, message: 'Upload complete' });
-  }).catch(() => res.status(500).json({ success: false, error: 'Failed to persist media asset' }));
+  }).catch((err: any) => {
+    if (err?.code === 'QUOTA_EXCEEDED') {
+      return res.status(413).json({ success: false, error: err.message, quotaBytes: err.quotaBytes, usedBytes: err.usedBytes });
+    }
+    res.status(500).json({ success: false, error: 'Failed to persist media asset' });
+  });
 });
 
 // DELETE /api/media/chunked/:sid — cancel/abandon session
@@ -479,7 +494,7 @@ mediaRouter.delete('/:id', async (req: AuthenticatedRequest, res: Response) => {
     return res.status(409).json({ success: false, error: 'Asset is referenced by scheduled content', references: refs.slice(0, 10) });
   }
 
-  const deleted = softDeleteAsset(mediaId);
+  const deleted = await softDeleteAsset(mediaId);
   if (!deleted) return res.status(404).json({ success: false, error: 'Media asset not found' });
 
   // Best-effort object removal; legacy files under uploads/ kept for WP5 relocation.

@@ -32,7 +32,7 @@ await t('createAsset + listAssets + usageBytes', async () => {
   resetMediaAssetsForTests();
   const key = 'ws/w1/media/' + sha('a') + '.png';
   await store.put(key, Buffer.from('aaa'));
-  createAsset({ workspaceId: 'w1', userId: 'u1', storageKey: key, sha256: sha('a'), mimeType: 'image/png', sizeBytes: 3, originalName: 'a.png' });
+  await createAsset({ workspaceId: 'w1', userId: 'u1', storageKey: key, sha256: sha('a'), mimeType: 'image/png', sizeBytes: 3, originalName: 'a.png' });
   assert.equal(listAssets('w1').length, 1);
   assert.equal(usageBytes('w1'), 3);
 });
@@ -60,7 +60,7 @@ await t('assetPublicUrl returns signed path for new assets', async () => {
 
 await t('softDelete excludes from list + usage', async () => {
   const rec = listAssets('w1')[0];
-  softDeleteAsset(rec.id);
+  await softDeleteAsset(rec.id);
   assert.equal(listAssets('w1').length, 0);
   assert.equal(usageBytes('w1'), 0);
   assert.equal(listAssets('w1', true).length, 1);
@@ -68,8 +68,8 @@ await t('softDelete excludes from list + usage', async () => {
 
 await t('videoCount counts only video mime', async () => {
   resetMediaAssetsForTests();
-  createAsset({ workspaceId: 'w2', userId: 'u1', storageKey: 'ws/w2/media/v.mp4', sha256: sha('v'), mimeType: 'video/mp4', sizeBytes: 10 });
-  createAsset({ workspaceId: 'w2', userId: 'u1', storageKey: 'ws/w2/media/i.png', sha256: sha('i'), mimeType: 'image/png', sizeBytes: 5 });
+  await createAsset({ workspaceId: 'w2', userId: 'u1', storageKey: 'ws/w2/media/v.mp4', sha256: sha('v'), mimeType: 'video/mp4', sizeBytes: 10 });
+  await createAsset({ workspaceId: 'w2', userId: 'u1', storageKey: 'ws/w2/media/i.png', sha256: sha('i'), mimeType: 'image/png', sizeBytes: 5 });
   assert.equal(videoCount('w2'), 1);
   assert.equal(usageBytes('w2'), 15);
 });
@@ -78,6 +78,20 @@ await t('orphanReport detects object without asset row', async () => {
   await store.put('ws/w2/media/orphan.bin', Buffer.from('x'));
   const report = await orphanReport();
   assert.ok(report.orphanObjects.includes('ws/w2/media/orphan.bin'));
+});
+
+await t('quota: atomic check rejects over-quota insert', async () => {
+  resetMediaAssetsForTests();
+  await createAsset({ workspaceId: 'wq', userId: 'u1', storageKey: 'ws/wq/media/a.bin', sha256: sha('qa'), mimeType: 'video/mp4', sizeBytes: 8 });
+  let threw = false;
+  try {
+    await createAsset({ workspaceId: 'wq', userId: 'u1', storageKey: 'ws/wq/media/b.bin', sha256: sha('qb'), mimeType: 'video/mp4', sizeBytes: 5 }, { quotaBytes: 10 });
+  } catch (e: any) { threw = e?.code === 'QUOTA_EXCEEDED'; }
+  assert.ok(threw, 'over-quota insert must throw QUOTA_EXCEEDED');
+  assert.equal(listAssets('wq').length, 1, 'rejected insert must not be cataloged');
+  // Under-quota insert with room for exactly the remaining bytes succeeds.
+  await createAsset({ workspaceId: 'wq', userId: 'u1', storageKey: 'ws/wq/media/c.bin', sha256: sha('qc'), mimeType: 'video/mp4', sizeBytes: 2 }, { quotaBytes: 10 });
+  assert.equal(listAssets('wq').length, 2);
 });
 
 await t('tenant isolation: assets scoped by workspaceId', async () => {
