@@ -65,7 +65,7 @@ await t('static: entity routes use stateGet/stateSave, no direct blob writes', a
   const lines = src.split('\n');
   // helper block is lines ~53-72 (stateGet/stateVersion/stateSave)
   const helperStart = lines.findIndex((l) => l.includes('async function stateGet'));
-  const helperEnd = lines.findIndex((l, i) => i > helperStart && l === '}' && lines.slice(helperStart, i).join('\n').includes('stateSave'));
+  const helperEnd = lines.findIndex((l, i) => i > helperStart && l.includes('async function saveOrConflict'));
   const outside = lines.filter((l, i) =>
     i < helperStart || i > helperEnd
   ).join('\n');
